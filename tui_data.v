@@ -30,7 +30,7 @@ fn tui_load(api Repository, label string, kind TuiLoadKind, results chan TuiLoad
 			text = repository.repo
 			if text == '' && failure == '' { failure = 'cannot find repository' }
 		}
-		.advisories { rows = api.advisories('') or { failure = err.msg(); [][]string{} } }
+		.advisories { rows = api.advisories_with_releases('') or { failure = err.msg(); [][]string{} } }
 		.commits { rows = commits() or { failure = err.msg(); [][]string{} } }
 		.issues { rows = api.issues(label) or { failure = err.msg(); [][]string{} } }
 		.git_status { text = local_git_status() }
@@ -88,18 +88,14 @@ fn tui_status_load(api Repository, id string, cve bool, results chan string) {
 	results <- if cve { api.request_cve(id) or { 'error: ${err}' } } else { api.status(id) or { 'error: ${err}' } }
 }
 
-fn tui_status(api Repository, id string) {
-	tui_details(api, id, false)
-}
-
-fn tui_details(api Repository, id string, cve bool) {
+fn tui_details(api Repository, id string, cve bool, detail string) {
 	results := chan string{cap: 1}
 	spawn tui_status_load(api, id, cve, results)
 	mut screen := TuiScreen{}
 	for {
 		mut text := ''
 		if results.try_pop(mut text) == .success {
-			tui_dialog(text)
+			tui_dialog(text + if detail == '' { '' } else { '\n\n' + detail })
 			return
 		}
 		w, h := terminal_size()

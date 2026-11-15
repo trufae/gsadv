@@ -1,5 +1,13 @@
 # TUI
 
+At widths of 80 columns or more, the advisory tab includes `FIXED IN` and `RELEASE`.
+At 120 columns or more it also shows the CVE and severity text. The selection line
+shows the patched versions, their release results, and recorded affected ranges;
+press `s` for the complete scrollable details, including any release lookup error.
+Use `/` to filter by version or release status and see the matching count in the tab.
+Press `g` to refresh release data. See [release matching](usage.md#ls) for the status
+meanings and limits.
+
 Running `gsadv` with no command opens the TUI. The header identifies the provider, host
 and project. GitLab uses a disclosures tab and an issues/MRs tab; see [GitLab support](gitlab.md).
 

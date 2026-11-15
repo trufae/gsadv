@@ -22,7 +22,8 @@ fn test_clip_terminal_cells_and_styles() {
 
 fn test_rows_fit_every_width() {
 	title := 'Fix 界 e\u0301 👩🏽‍💻 🟠 '.repeat(20)
-	a := ['GHSA-abcd-efgh-ijkl', 'published', 'CVE-2026-123456789', 'critical', title, 'abcdef0123']
+	a := ['GHSA-abcd-efgh-ijkl', 'published', 'CVE-2026-123456789', 'critical', title, 'abcdef0123', '', '',
+		'1.2.3; 界 e\u0301 👩🏽‍💻 🟠', 'parser: < 1.2.3', 'mixed', '1.2.3 (released); unknown']
 	for w in 1 .. 201 {
 		for line in [row(a, w), crow(['abcdef0123456789', '2026-11-09', title], [a], w),
 			irow(['url', '123456789', 'issue', 'closed', title], [a], w),

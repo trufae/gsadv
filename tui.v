@@ -308,11 +308,34 @@ fn row(r []string, w int) string {
 	if r.len < 5 {
 		return clip_line(r.join(' '), line_width(w))
 	}
-	summary := if r.len > 7 { '[${r[7]}] ' + r[4] } else { r[4] }
+	summary := if r.len > 7 && r[7] != '' { '[${r[7]}] ' + r[4] } else { r[4] }
+	fixed := if w >= 500 { fixed_in(r) } else { table_cell(fixed_in(r), 14) }
+	cve := if w >= 500 { r[2] } else { table_cell(r[2], 15) }
+	released := release_state(r)
 	line := if w < 40 { summary } else if w < 80 {
 		'${severity_icon(r[3])} ${r[0]} ${color(r[1], r[1])} ${summary}'
-	} else { '${severity_icon(r[3])} ${r[0]:-20} ${color(r[1], '${r[1]:-10}')} ${r[2]:-15} ${r[3]:-9} ${summary}' }
+	} else if w < 120 {
+		'${severity_icon(r[3])} ${r[0]:-20} ${color(r[1], '${r[1]:-10}')} ${fixed:-14} ${released:-11} ${summary}'
+	} else {
+		'${severity_icon(r[3])} ${r[0]:-20} ${color(r[1], '${r[1]:-10}')} ${cve:-15} ${r[3]:-9} ${fixed:-14} ${released:-11} ${summary}'
+	}
 	return clip_line(line, line_width(w))
+}
+
+fn table_cell(text string, width int) string {
+	plain := term.strip_ansi(clip_line(text, text.len))
+	mut clipped := clip_line(plain, width)
+	if clipped != plain { clipped = clip_line(plain, width - 1) + '…' }
+	mut used := 0
+	for g in clipped.graphemes() { used += cell_width(g) }
+	return clipped + ' '.repeat(int_max(0, width - used))
+}
+
+fn advisory_columns(w int) string {
+	if w < 40 { return 'SUMMARY' }
+	if w < 80 { return '   ADVISORY STATE SUMMARY' }
+	metadata := if w < 120 { '' } else { '${'CVE':-15} ${'SEVERITY':-9} ' }
+	return '   ${'ADVISORY':-20} ${'STATE':-10} ${metadata}${'FIXED IN':-14} ${'RELEASE':-11} SUMMARY'
 }
 
 // Suggested actions depend on the advisory lifecycle, independently of CVE assignment.
@@ -918,12 +941,12 @@ fn tui(initial_api Repository, label string) {
 		repo_name := if api.repo != '' { api.repo } else if repo_pending { 'resolving repository...' } else { 'repository unavailable' }
 		header := 'gsadv ${api.provider}:${api.host}/${repo_name} | local git: ${git_status}'
 		tab_line := tui_tabs(tabs, view, width)
-		columns := if w < 40 {
-			if view == 0 { 'SUMMARY' } else if view == 1 { 'SUBJECT' } else { 'NUMBER TITLE' }
+		columns := if view == 0 {
+			advisory_columns(w)
+		} else if w < 40 {
+			if view == 1 { 'SUBJECT' } else { 'NUMBER TITLE' }
 		} else if w < 80 {
-			if view == 0 { '   ADVISORY STATE SUMMARY' } else if view == 1 { '   COMMIT     SUBJECT' } else { 'NUMBER TYPE STATE TITLE' }
-		} else if view == 0 {
-			'   ${'ADVISORY':-20} ${'STATE':-10} ${'CVE':-15} ${'SEVERITY':-9} SUMMARY'
+			if view == 1 { '   COMMIT     SUBJECT' } else { 'NUMBER TYPE STATE TITLE' }
 		} else if view == 1 {
 			'   ${'COMMIT':-10} ${'DATE':-10} ${'ADVISORY':-20} SUBJECT'
 		} else {
@@ -960,8 +983,8 @@ fn tui(initial_api Repository, label string) {
 				'-' { if api.provider == 'gitlab' { 'no CVE referenced' } else { 'no CVE assigned; request status unknown' } }
 				else { if api.provider == 'gitlab' { 'CVE references: ' + advs[ai][2] } else { advs[ai][2] } }
 			}
-			visibility := if advs[ai].len > 7 { advs[ai][7] + ' | ' } else { '' }
-			'${id} | ${advs[ai][1]} | ${visibility}${cve}'
+			visibility := if advs[ai].len > 7 && advs[ai][7] != '' { advs[ai][7] + ' | ' } else { '' }
+			if view == 0 { release_hint(advs[ai]) + ' | ' } else { '' } + '${id} | ${advs[ai][1]} | ${visibility}${cve}'
 		} else {
 			'No advisory selected; n creates a draft from a commit, issue or PR'
 		}
@@ -1109,7 +1132,7 @@ fn tui(initial_api Repository, label string) {
 					continue
 				}
 				if k == 's' {
-					tui_status(api, id)
+					tui_details(api, id, false, release_hint(advs[ai]))
 					continue
 				}
 				cooked()
@@ -1143,7 +1166,7 @@ fn tui(initial_api Repository, label string) {
 				}
 				if api.provider == 'gitlab' && action_key == 'c' {
 					screen.width = 0
-					tui_details(api, id, true)
+					tui_details(api, id, true, '')
 					continue
 				}
 				verb := match k {

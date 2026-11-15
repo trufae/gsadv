@@ -33,6 +33,17 @@ const jq_source = '"# \\(.title)\n\nURL: \\(.html_url)\nAuthor: @\\(.user.login)
 (if has("merged") then "Merged: \\(.merged)\nMerged at: \\(.merged_at // "-")\nMerge commit: \\(.merge_commit_sha // "-")\nBase: \\(.base.ref)\nHead: \\(.head.ref)\n" else "" end) +
 "\n" + (.body // "")'
 
+const jq_advisories = '.[] | [
+  .ghsa_id, .state, .cve_id // "-", .severity // "-", .summary,
+  ([.description // "" | scan("[0-9a-f]{10,40}")] | join(",")),
+  ([.description // "" | scan("https://github[.]com/[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+/(?:issues|pull)/[0-9]+")] | join(",")),
+  "",
+  ([.vulnerabilities[]? | (.patched_versions // "" | gsub("^\\\\s+|\\\\s+$"; "")) |
+    if . == "" then "unknown" else . end] | unique | join("; ")),
+  ([.vulnerabilities[]? | (.package.name // "package") + ": " +
+    (if (.vulnerable_version_range // "") == "" then "unknown" else .vulnerable_version_range end)] | join("; "))
+] | @tsv'
+
 fn (api Repository) github_source_text(s Source, with_patch bool) !string {
 	if s.kind == 'commit' {
 		patch := api.github_request('-H', 'Accept: application/vnd.github.patch', 'repos/${api.repo}/commits/${s.ref}')!
@@ -59,7 +70,8 @@ fn (api Repository) github_advisories(state string) ![][]string {
 		return error('invalid state: ${state}; choose ${states.join(', ')}')
 	}
 	query := '?per_page=100' + if state in ['', 'all'] { '' } else { '&state=${state}' }
-	out := api.github_request('--paginate', 'repos/${api.repo}/security-advisories${query}', '--jq', '.[] | [.ghsa_id, .state, .cve_id // "-", .severity // "-", .summary, ([.description // "" | scan("[0-9a-f]{10,40}")] | join(",")), ([.description // "" | scan("https://github[.]com/[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+/(?:issues|pull)/[0-9]+")] | join(","))] | @tsv'.replace('https://github[.]com/', 'https://' + api.host.replace('.', '[.]') + '/'))!
+	out := api.github_request('--paginate', 'repos/${api.repo}/security-advisories${query}', '--jq',
+		jq_advisories.replace('https://github[.]com/', 'https://' + api.host.replace('.', '[.]') + '/'))!
 	mut rows := out.split_into_lines().filter(it != '').map(it.split('\t'))
 	for mut row in rows {
 		if row.len >= 5 && row[2] == '-' && api.cve_requested_at(row[0]) != '' {
@@ -67,6 +79,21 @@ fn (api Repository) github_advisories(state string) ![][]string {
 		}
 	}
 	return rows
+}
+
+fn (api Repository) github_releases() !map[string]string {
+	out := api.github_request('--paginate', 'repos/${api.repo}/releases?per_page=100', '--jq',
+		'.[] | [.tag_name, (if .draft then "draft" elif .published_at == null then "unknown" elif .prerelease then "prerelease" else "released" end)] | @tsv')!
+	mut releases := map[string]string{}
+	for line in out.split_into_lines() {
+		if line == '' { continue }
+		fields := line.split('\t')
+		if fields.len != 2 || fields[1] !in ['draft', 'unknown', 'prerelease', 'released'] {
+			return error('invalid release data')
+		}
+		releases[fields[0]] = fields[1]
+	}
+	return releases
 }
 
 fn (api Repository) github_status(id string) !string {

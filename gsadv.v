@@ -107,7 +107,9 @@ fn main() {
 	match cmd {
 		'ls' {
 			marks := api.invalid_marks()!
-			for r in api.advisories(id)! {
+			rows := api.advisories_with_releases(id)!
+			println(advisory_columns(999))
+			for r in rows {
 				println(marked_row(row(r, 999), marks[invalid_key(r[0])], 999))
 			}
 		}

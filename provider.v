@@ -35,6 +35,34 @@ fn (api Repository) advisories(state string) ![][]string {
 	return if api.provider == 'gitlab' { api.gitlab_advisories(state)! } else { api.github_advisories(state)! }
 }
 
+// A single paginated release lookup serves the whole list. A release failure
+// must not hide advisories or turn missing evidence into "no release".
+fn (api Repository) advisories_with_releases(state string) ![][]string {
+	mut rows := api.advisories(state)!
+	mut failure := ''
+	mut releases := map[string]string{}
+	if rows.any(it.len > 8 && it[8] !in ['', 'unknown']) {
+		releases = api.releases() or {
+			failure = if err.msg() == '' { 'release request failed' } else { err.msg() }
+			map[string]string{}
+		}
+	}
+	for mut row in rows {
+		if row.len < 5 { continue }
+		for row.len < 10 { row << '' }
+		if row[8] == '' { row[8] = 'unknown' }
+		if row[9] == '' { row[9] = 'unknown' }
+		released, detail := fixed_release_summary(row[8], releases, failure)
+		row << released
+		row << detail
+	}
+	return rows
+}
+
+fn (api Repository) releases() !map[string]string {
+	return if api.provider == 'gitlab' { api.gitlab_releases()! } else { api.github_releases()! }
+}
+
 fn (api Repository) advisory(id string) !string {
 	return if api.provider == 'gitlab' { api.gitlab_advisory(id)! } else { api.github_advisory(id)! }
 }

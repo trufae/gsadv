@@ -37,9 +37,19 @@ def stub():
         sys.exit('403 Forbidden: fixture denied access')
     if client == 'gh':
         assert host in ['github.com', 'code.example']
+        if '/releases?' in path:
+            assert '--paginate' in args and 'per_page=100' in path
+            if os.environ.get('FAIL_RELEASES') == 'silent':
+                sys.exit(1)
+            if os.environ.get('FAIL_RELEASES'):
+                sys.exit('403 Forbidden: cannot read releases')
+            print('v1.2.0\treleased\n2.0\tdraft\n3.0-rc1\tprerelease')
+            return
         assert path.startswith('repos/owner/repo/security-advisories')
         if '?' in path:
-            print('GHSA-abcd-efgh-ijkl\tdraft\t-\thigh\tGitHub report\t\t')
+            suffix = '\t\t' + os.environ.get('PATCHED', '') + '\tparser: < 1.2.0'
+            assert '.patched_versions' in args[-1] and '.vulnerable_version_range' in args[-1]
+            print('GHSA-abcd-efgh-ijkl\tdraft\t-\thigh\tGitHub report\t\t' + suffix)
         elif method == 'POST':
             print('{}')
         elif '.cve_id' in args[-1]:
@@ -69,6 +79,11 @@ def stub():
         else:
             assert set(payload) == {'title', 'description'}
             result.update(payload)
+    elif endpoint == 'releases':
+        if os.environ.get('FAIL_RELEASES'):
+            sys.exit('403 Forbidden: cannot read releases')
+        result = [dict(tag_name='v2', released_at='2020-01-01T00:00:00Z'),
+                  dict(tag_name='3', released_at='2999-01-01T00:00:00Z', upcoming_release=True)]
     elif endpoint == 'issues':
         result = [i for i in issues.values() if query['labels'][0] in i['labels']
                   and (query['state'][0] == 'all' or query['state'][0] == i['state'])]
@@ -190,6 +205,23 @@ def main():
         assert 'not this host' in run('--provider', 'gitlab', '-r', 'https://code.example/group/sub/repo', 'cve', 'GL-42')
         assert calls()[-1]['host'] == 'code.example'
         assert 'GitHub report' in run('-r', 'https://github.com/owner/repo', 'ls')
+        for patched, status in [('1.2.0', 'released'), ('2.0', 'draft'), ('3.0-rc1', 'prerelease'),
+                                ('4.0', 'no release'), ('>= 1.2.0', 'unknown'),
+                                ('1.2.0; 2.0', 'mixed')]:
+            output = run('-r', 'https://github.com/owner/repo', 'ls', overrides={'PATCHED': patched})
+            assert 'FIXED IN' in output and 'RELEASE' in output
+            assert patched in output and status in output, output
+            assert calls()[-1]['path'] == 'repos/owner/repo/releases?per_page=100'
+        output = run('-r', 'https://github.com/owner/repo', 'ls',
+                     overrides={'PATCHED': '1.2.0', 'FAIL_RELEASES': '1'})
+        assert 'GitHub report' in output and 'unknown' in output and 'no release' not in output
+        output = run('-r', 'https://github.com/owner/repo', 'ls',
+                     overrides={'PATCHED': '1.2.0', 'FAIL_RELEASES': 'silent'})
+        assert 'GitHub report' in output and 'unknown' in output and 'no release' not in output
+        output = run('ls')
+        assert 'released' in output and '[confidential]' in output
+        output = run('ls', overrides={'FAIL_RELEASES': '1'})
+        assert 'unknown' in output and '[confidential]' in output and 'no release' not in output
         run('-r', 'https://github.com/owner/repo', 'cve', 'GHSA-abcd-efgh-ijkl')
         assert 'requested*' in run('-r', 'https://github.com/owner/repo', 'ls')
         run('ls', overrides={'GSADV_REPO': 'owner/repo', 'GH_HOST': 'code.example'})
@@ -224,7 +256,17 @@ def tui_smoke(binary, root, env):
         raise AssertionError((needle, output.decode(errors='replace')))
 
     try:
-        until('[confidential]')
+        opening = until('[confidential]')
+        assert 'FIXED IN' in opening and 'RELEASE' in opening and 'released' in opening
+        os.write(master, b'/')
+        until('Filter text:')
+        os.write(master, b'released\r')
+        until('/released')
+        os.write(master, b's')
+        details = until('Affected:')
+        assert 'Fixed in: 2 (released)' in details and 'parser: < 2' in details
+        os.write(master, b'\x1b')
+        until('disclosures')
         os.write(master, b'm')
         menu = until('Choose a key')
         assert 'CVE request instructions' in menu and 'p publish' not in menu

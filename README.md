@@ -112,6 +112,21 @@ status. Git details refresh with `g` and after returning from a viewer, editor o
 The TUI adapts to narrow and short terminals, keeps the selection visible when resized,
 and refreshes changed rows without clearing the screen. Small widths use compact rows;
 open an entry to read its full text. Menus and help scroll with `j`/`k` or the mouse wheel.
+The advisory list and `ls` include **FIXED IN** and **RELEASE** columns. Recorded patched
+versions are checked against repository releases: `released`, `prerelease`, `draft`,
+`upcoming` (GitLab), or `no release` (no matching release tag). Missing versions, version
+ranges that cannot be matched exactly, and failed release lookups show `unknown`;
+advisories with different results across patched versions show `mixed`.
+The TUI selection line shows each version's result and the recorded affected ranges.
+Use `/` to filter by a fix version or release status; the tab count shows matching
+advisories within the current state filter. `g` refreshes the release check.
+Columns appear at 80+ terminal columns; CVE and severity text appear at 120+.
+Matching accepts an optional `v` prefix, but does not infer fixes from local tags,
+compare ecosystem-specific version ranges, or verify package registry availability.
+A missing fix release does not prove the bug was introduced since the last release:
+check the affected range to distinguish released-build bugs from development-only bugs.
+Release visibility also follows repository access; these indicators do not automatically
+approve publication. See [list details](doc/usage.md#ls).
 Key commands:
 
 | Command | What |

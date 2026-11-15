@@ -60,6 +60,22 @@ gsadv publish GHSA-xxxx-yyyy-zzzz              # goes public
 
 ### ls
 
+The `FIXED IN` column contains the advisory's recorded patched versions. `RELEASE`
+checks those versions against the repository's GitHub or GitLab releases, across all
+pages. A leading `v` in a version or tag is optional. Plain Git tags do not count as
+releases. `released` means a matching published release; `prerelease`, `draft`, and
+GitLab `upcoming` remain distinct. `no release` means there is no matching release
+tag, even if a later version has a release. Missing versions, unmatched version
+ranges/prose, or a failed lookup show `unknown`. Different results across versions
+show `mixed`; inspect the TUI status (`s`) for the per-version results and affected
+ranges. Repository access still determines who can see a release.
+
+In the TUI, filter with `/` using a version or `no release` to see the matching
+advisory count. This helps group fixes awaiting releases, but is not a count of bugs
+introduced since the last release. Check the recorded affected range and introduction
+evidence to determine whether release users are affected. Release checks do not change
+advisory state or automatically authorize publication.
+
 Lists GitHub advisories: GHSA id, state, CVE id, severity and summary.
 For GitLab, lists disclosure issues labeled `GSADV_ADVISORY_LABEL`, with `GL-` IDs,
 CVE references and separate confidentiality indicators. GitLab filters are `all`,

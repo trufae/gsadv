@@ -4,6 +4,7 @@ import os
 import json2
 import net.urllib
 import regex
+import time
 
 // Keep the serialized marker compatible with existing disclosure issues.
 const gitlab_advisory_marker = '<!-- ghadv:advisory -->\n```text\n'
@@ -49,6 +50,26 @@ struct GitLabCommit {
 	message string
 	author_name string
 	web_url string
+}
+
+struct GitLabRelease {
+	tag_name string
+	released_at string
+	upcoming_release bool
+}
+
+fn (api Repository) gitlab_releases() !map[string]string {
+	mut releases := map[string]string{}
+	for release in api.gitlab_list[GitLabRelease]('${api.gitlab_project()}/releases?per_page=100')! {
+		releases[release.tag_name] = gitlab_release_state(release, time.utc())
+	}
+	return releases
+}
+
+fn gitlab_release_state(release GitLabRelease, now time.Time) string {
+	if release.upcoming_release { return 'upcoming' }
+	date := time.parse_rfc3339(release.released_at) or { return 'unknown' }
+	return if date > now { 'upcoming' } else { 'released' }
 }
 
 struct GitLabEdit {
@@ -171,7 +192,9 @@ fn (api Repository) gitlab_advisories(state string) ![][]string {
 		}
 		rows << ['GL-${item.iid}', item.state, gitlab_cves(item), a.severity, item.title,
 			text_matches(item.description, '[0-9a-f]{10,40}').join(','), urls.join(','),
-			if item.confidential { 'confidential' } else { 'public' }]
+			if item.confidential { 'confidential' } else { 'public' },
+			a.vulnerabilities.map(if it.patched_versions.trim_space() == '' { 'unknown' } else { it.patched_versions.trim_space() }).join('; '),
+			a.vulnerabilities.map(it.package.name + ': ' + if it.vulnerable_version_range == '' { 'unknown' } else { it.vulnerable_version_range }).join('; ')]
 	}
 	return rows
 }
