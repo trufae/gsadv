@@ -1,6 +1,8 @@
 # TUI
 
 At widths of 80 columns or more, the advisory tab includes `FIXED IN` and `RELEASE`.
+Each RELEASE cell uses one colored emoji: 🟢 released, 🟡 prerelease, 🔵 draft,
+🟠 upcoming, 🔴 no release, 🟣 mixed, or ⚪ unknown.
 At 120 columns or more it also shows the CVE and severity text. The selection line
 shows the patched versions, their release results, and recorded affected ranges;
 press `s` for the complete scrollable details, including any release lookup error.

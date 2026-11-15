@@ -42,29 +42,35 @@ fn test_fixed_version_columns_filter_and_refresh() {
 	for width in [80, 119, 120, 160, 999] {
 		line := term.strip_ansi(row(a, width))
 		header := advisory_columns(width)
-		assert line.contains('1.2.0') && line.contains('no release')
+		assert line.contains('1.2.0') && line.contains('🔴')
+		assert !line.contains('no release')
 		assert !line.contains('[]')
 		mut offset := 0
 		for g in line.all_before('1.2.0').graphemes() { offset += cell_width(g) }
 		assert offset == header.index('FIXED IN') or { -1 }
+		for label, value in {'RELEASE': '🔴', 'SUMMARY': 'Bounds check'} {
+			offset = 0
+			for g in line.all_before(value).graphemes() { offset += cell_width(g) }
+			assert offset == header.index(label) or { -1 }
+		}
 		assert header.contains('CVE') == (width >= 120)
 	}
 	mut list := TuiList{}
 	list.rebuild([a], [a], advisory_links([a]), 0)
 	list.filter([a], 'no release', 'draft')
 	assert list.visible == [0]
-	assert list.line(0, [a], [a], 0, 80, false).contains('no release')
+	assert list.line(0, [a], [a], 0, 80, false).contains('🔴')
 	a[10], a[11] = 'released', '1.2.0 (released)'
 	list.rebuild([a], [a], advisory_links([a]), 0)
 	list.filter([a], 'no release', 'draft')
 	assert list.visible == []int{}
 	list.filter([a], '1.2.0', 'all')
 	assert list.visible == [0]
-	assert !list.line(0, [a], [a], 0, 80, false).contains('no release')
+	assert list.line(0, [a], [a], 0, 80, false).contains('🟢')
 	assert release_hint(a).contains('Affected: parser: < 1.2.0')
 	assert row(['GHSA-test', 'draft', '-', 'high', 'Report'], 120).contains('unknown')
 	a[2] = 'CVE-2026-123456789,CVE-2026-987654321'
-	assert row(a, 120).contains('1.2.0') && row(a, 120).contains('released')
+	assert row(a, 120).contains('1.2.0') && row(a, 120).contains('🟢')
 	a[8] = '1.2.0; 2.0.0; 3.0.0'
 	assert row(a, 80).contains('…')
 	assert row(a, 999).contains(a[8])

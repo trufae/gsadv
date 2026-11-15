@@ -238,6 +238,8 @@ g: reload; A: cycle AI agent
 
 Severity: 🔴 critical, 🟠 high, 🟡 medium, 🟢 low, ⚪ unknown.
 Commit circles use linked advisory severity or a keyword estimate from the subject.
+Release: 🟢 released, 🟡 prerelease, 🔵 draft, 🟠 upcoming,
+🔴 no release, 🟣 mixed, ⚪ unknown.
 States: triage (private report), draft, published, closed.
 CVE assignment is separate from the advisory state and happens asynchronously.
 Use s to check the assigned CVE; GitHub REST does not expose pending requests.
@@ -263,6 +265,18 @@ fn severity_icon(severity string) string {
 		'high' { '🟠' }
 		'medium', 'moderate' { '🟡' }
 		'low' { '🟢' }
+		else { '⚪' }
+	}
+}
+
+fn release_icon(state string) string {
+	return match state {
+		'released' { '🟢' }
+		'prerelease' { '🟡' }
+		'draft' { '🔵' }
+		'upcoming' { '🟠' }
+		'no release' { '🔴' }
+		'mixed' { '🟣' }
 		else { '⚪' }
 	}
 }
@@ -311,13 +325,13 @@ fn row(r []string, w int) string {
 	summary := if r.len > 7 && r[7] != '' { '[${r[7]}] ' + r[4] } else { r[4] }
 	fixed := if w >= 500 { fixed_in(r) } else { table_cell(fixed_in(r), 14) }
 	cve := if w >= 500 { r[2] } else { table_cell(r[2], 15) }
-	released := release_state(r)
+	released := table_cell(release_icon(release_state(r)), 7)
 	line := if w < 40 { summary } else if w < 80 {
 		'${severity_icon(r[3])} ${r[0]} ${color(r[1], r[1])} ${summary}'
 	} else if w < 120 {
-		'${severity_icon(r[3])} ${r[0]:-20} ${color(r[1], '${r[1]:-10}')} ${fixed:-14} ${released:-11} ${summary}'
+		'${severity_icon(r[3])} ${r[0]:-20} ${color(r[1], '${r[1]:-10}')} ${fixed:-14} ${released} ${summary}'
 	} else {
-		'${severity_icon(r[3])} ${r[0]:-20} ${color(r[1], '${r[1]:-10}')} ${cve:-15} ${r[3]:-9} ${fixed:-14} ${released:-11} ${summary}'
+		'${severity_icon(r[3])} ${r[0]:-20} ${color(r[1], '${r[1]:-10}')} ${cve:-15} ${r[3]:-9} ${fixed:-14} ${released} ${summary}'
 	}
 	return clip_line(line, line_width(w))
 }
@@ -335,7 +349,7 @@ fn advisory_columns(w int) string {
 	if w < 40 { return 'SUMMARY' }
 	if w < 80 { return '   ADVISORY STATE SUMMARY' }
 	metadata := if w < 120 { '' } else { '${'CVE':-15} ${'SEVERITY':-9} ' }
-	return '   ${'ADVISORY':-20} ${'STATE':-10} ${metadata}${'FIXED IN':-14} ${'RELEASE':-11} SUMMARY'
+	return '   ${'ADVISORY':-20} ${'STATE':-10} ${metadata}${'FIXED IN':-14} RELEASE SUMMARY'
 }
 
 // Suggested actions depend on the advisory lifecycle, independently of CVE assignment.

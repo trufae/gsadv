@@ -68,7 +68,9 @@ GitLab `upcoming` remain distinct. `no release` means there is no matching relea
 tag, even if a later version has a release. Missing versions, unmatched version
 ranges/prose, or a failed lookup show `unknown`. Different results across versions
 show `mixed`; inspect the TUI status (`s`) for the per-version results and affected
-ranges. Repository access still determines who can see a release.
+ranges. The column displays a single emoji: 🟢 released, 🟡 prerelease, 🔵 draft,
+🟠 upcoming, 🔴 no release, 🟣 mixed, or ⚪ unknown. Repository access still determines
+who can see a release.
 
 In the TUI, filter with `/` using a version or `no release` to see the matching
 advisory count. This helps group fixes awaiting releases, but is not a count of bugs

@@ -205,23 +205,23 @@ def main():
         assert 'not this host' in run('--provider', 'gitlab', '-r', 'https://code.example/group/sub/repo', 'cve', 'GL-42')
         assert calls()[-1]['host'] == 'code.example'
         assert 'GitHub report' in run('-r', 'https://github.com/owner/repo', 'ls')
-        for patched, status in [('1.2.0', 'released'), ('2.0', 'draft'), ('3.0-rc1', 'prerelease'),
-                                ('4.0', 'no release'), ('>= 1.2.0', 'unknown'),
-                                ('1.2.0; 2.0', 'mixed')]:
+        for patched, status in [('1.2.0', '🟢'), ('2.0', '🔵'), ('3.0-rc1', '🟡'),
+                                ('4.0', '🔴'), ('>= 1.2.0', '⚪'),
+                                ('1.2.0; 2.0', '🟣')]:
             output = run('-r', 'https://github.com/owner/repo', 'ls', overrides={'PATCHED': patched})
             assert 'FIXED IN' in output and 'RELEASE' in output
             assert patched in output and status in output, output
             assert calls()[-1]['path'] == 'repos/owner/repo/releases?per_page=100'
         output = run('-r', 'https://github.com/owner/repo', 'ls',
                      overrides={'PATCHED': '1.2.0', 'FAIL_RELEASES': '1'})
-        assert 'GitHub report' in output and 'unknown' in output and 'no release' not in output
+        assert 'GitHub report' in output and '⚪' in output and '🔴' not in output
         output = run('-r', 'https://github.com/owner/repo', 'ls',
                      overrides={'PATCHED': '1.2.0', 'FAIL_RELEASES': 'silent'})
-        assert 'GitHub report' in output and 'unknown' in output and 'no release' not in output
+        assert 'GitHub report' in output and '⚪' in output and '🔴' not in output
         output = run('ls')
-        assert 'released' in output and '[confidential]' in output
+        assert '🟢' in output and '[confidential]' in output
         output = run('ls', overrides={'FAIL_RELEASES': '1'})
-        assert 'unknown' in output and '[confidential]' in output and 'no release' not in output
+        assert '⚪' in output and '[confidential]' in output and '🔴' not in output
         run('-r', 'https://github.com/owner/repo', 'cve', 'GHSA-abcd-efgh-ijkl')
         assert 'requested*' in run('-r', 'https://github.com/owner/repo', 'ls')
         run('ls', overrides={'GSADV_REPO': 'owner/repo', 'GH_HOST': 'code.example'})
@@ -257,7 +257,7 @@ def tui_smoke(binary, root, env):
 
     try:
         opening = until('[confidential]')
-        assert 'FIXED IN' in opening and 'RELEASE' in opening and 'released' in opening
+        assert 'FIXED IN' in opening and 'RELEASE' in opening and '🟢' in opening
         os.write(master, b'/')
         until('Filter text:')
         os.write(master, b'released\r')

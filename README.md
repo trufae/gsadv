@@ -113,10 +113,11 @@ The TUI adapts to narrow and short terminals, keeps the selection visible when r
 and refreshes changed rows without clearing the screen. Small widths use compact rows;
 open an entry to read its full text. Menus and help scroll with `j`/`k` or the mouse wheel.
 The advisory list and `ls` include **FIXED IN** and **RELEASE** columns. Recorded patched
-versions are checked against repository releases: `released`, `prerelease`, `draft`,
-`upcoming` (GitLab), or `no release` (no matching release tag). Missing versions, version
-ranges that cannot be matched exactly, and failed release lookups show `unknown`;
-advisories with different results across patched versions show `mixed`.
+versions are checked against repository releases. Each RELEASE cell uses one emoji:
+🟢 `released`, 🟡 `prerelease`, 🔵 `draft`, 🟠 `upcoming` (GitLab), or 🔴 `no release`
+(no matching release tag). Missing versions, version ranges that cannot be matched
+exactly, and failed release lookups show ⚪ `unknown`; advisories with different
+results across patched versions show 🟣 `mixed`.
 The TUI selection line shows each version's result and the recorded affected ranges.
 Use `/` to filter by a fix version or release status; the tab count shows matching
 advisories within the current state filter. `g` refreshes the release check.
