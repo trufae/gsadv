@@ -52,7 +52,7 @@ for compatibility; select GitLab explicitly or use a URL.
 ## Disclosure issues
 
 The GitLab **disclosures** tab and `ls` select issues labeled `security-advisory`.
-`GSADV_ADVISORY_LABEL` changes this label. The separate **issues/MRs** tab uses
+`GSADV_ADVISORY_LABEL` changes this label. The **issues** and **MRs** tabs use
 `GSADV_LABEL` (default `cve`), or the label passed to `tui`/`issues`.
 
 ```sh

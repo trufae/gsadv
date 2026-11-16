@@ -7,7 +7,7 @@ its workflow and platform differences. `<id>` means `GHSA-…` on GitHub or `GL-
 ```
 gsadv [-r namespace/repo|url] [--provider github|gitlab] [--host hostname] [--remote name] [--label label] [--grep regex] [command] [args]
   --version, -v, version   print the tool version
-  tui [label]              advisory, commit and labeled issues/PRs tabs (default)
+  tui [label]              advisory, commit, issue and PR/MR tabs (default)
   ls [state]               GitHub advisories or GitLab disclosure issues (opened/closed)
   log                     list tagged fix commits and their advisories
   issues [label]           list labeled issues/PRs (default: GSADV_LABEL or cve)
@@ -126,7 +126,9 @@ gsadv -r owner/repo tui "needs-cve"
 
 Both commands accept an optional label, defaulting to `GSADV_LABEL`, `git config gsadv.label`
 or `cve`. Use `--label ''` or an empty `GSADV_LABEL` to include unlabelled items.
-The TUI always includes the third issues/PRs or issues/MRs tab. Items are fetched across
+The TUI has separate issues and PRs/MRs tabs, each with its own search, selection and scrolling.
+Both headers show the active label explicitly, or `all labels` when unfiltered.
+The `issues` CLI command lists both types together. Items are fetched across
 all pages and states, including closed issues and merged PRs/MRs. The list shows any advisory
 referencing each item's URL. Press `n` in that tab to draft from the selected item.
 The label is not removed after draft creation or CVE requests.

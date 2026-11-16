@@ -371,7 +371,33 @@ def tui_smoke(binary, root, env):
         os.write(master, b'\t')
         until('[commits')
         os.write(master, b'\t')
-        until('[issues/MRs')
+        issues = until('[issues ')
+        assert 'label: cve' in issues and 'Reviewed report' in issues and 'Fix parser' not in issues
+        os.write(master, b'\t')
+        mrs = until('[MRs ')
+        assert 'Fix parser' in mrs and 'Reviewed report' not in mrs
+        os.write(master, b'r')
+        until('Review source with AI.')
+        os.write(master, b'\x1b')
+        until('[MRs ')
+        os.write(master, b'm')
+        menu = until('Choose a key')
+        assert 'M post discussion comment' in menu
+        os.write(master, b'\x1b')
+        until('[MRs ')
+        os.write(master, b'/')
+        until('Filter text:')
+        os.write(master, b'Fix parser\r')
+        until('/Fix parser')
+        os.write(master, b'\t')
+        disclosures = until('[disclosures ')
+        assert '/released' in disclosures and '/Fix parser' not in disclosures
+        os.write(master, b'\x1b[Z')
+        mrs = until('[MRs ')
+        assert '/Fix parser' in mrs
+        os.write(master, b'\x1b[Z')
+        issues = until('[issues ')
+        assert 'Reviewed report' in issues and 'Fix parser' not in issues
         os.write(master, b'q')
         assert process.wait(timeout=10) == 0
     finally:

@@ -15,7 +15,7 @@ fn setting(name string) ?string {
 
 const help = 'Usage: gsadv [-r namespace/repo|url] [--provider github|gitlab] [--host hostname] [--remote name] [--label label] [--grep regex] [command] [args]
   --version, -v, version   print the tool version
-  tui [label]              advisory, commit and issues/PRs tabs (default)
+  tui [label]              advisory, commit, issue and PR/MR tabs (default)
   ls [state]               GitHub advisories or GitLab disclosure issues (opened/closed)
   log                     list matching commits and their advisories
   issues [label]           list issues/PRs (default label: GSADV_LABEL or cve)

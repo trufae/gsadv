@@ -224,7 +224,7 @@ fn input_line(prompt string, text string, width int) string {
 	return label + tail
 }
 
-const tui_help = 'tab/shift-tab: next/previous view (advisories/commits/issues)
+const tui_help = 'tab/shift-tab: next/previous view (advisories/commits/issues/PRs or MRs)
 j/k or mouse wheel: move; J/K: move ten rows
 enter: view advisory/commit/issue/PR; e: edit advisory; r: AI review selected item; n: new draft
 M: edit and post a discussion comment on the selected issue/PR/MR
@@ -819,24 +819,25 @@ fn tui(initial_api Repository, label string) {
 	mut advs := [][]string{}
 	mut cms := [][]string{}
 	mut items := [][]string{}
+	mut prs := [][]string{}
 	mut git_status := 'loading...'
 	mut loader := TuiLoader{}
 	action_results := chan TuiActionResult{cap: 1}
 	mut pending_action := ''
-	mut loaded := [false, false, false]
-	mut lists := []TuiList{len: 3}
-	mut changed := [true, true, true]
+	mut loaded := [false, false, false, false]
+	mut lists := []TuiList{len: 4}
+	mut changed := [true, true, true, true]
 	mut links := AdvisoryLinks{}
-	mut view := 0 // 0 advisories, 1 git, 2 issues/PRs
-	mut sel := [0, 0, 0]
-	mut top := [0, 0, 0]
+	mut view := 0 // 0 advisories, 1 git, 2 issues, 3 PRs/MRs
+	mut sel := [0, 0, 0, 0]
+	mut top := [0, 0, 0, 0]
 	mut status := ''
 	mut invalid := map[string]string{}
 	if api.repo != '' {
 		invalid = api.invalid_marks() or { status = 'local invalid tags: ${err}'; map[string]string{} }
 	}
 	mut filter := 0
-	mut queries := ['', '', '']
+	mut queries := ['', '', '', '']
 	mut screen := TuiScreen{}
 	raw()
 	loader.request(api, label, .commits, false)
@@ -865,7 +866,7 @@ fn tui(initial_api Repository, label string) {
 						}
 					}
 				}
-				changed = [true, true, true]
+				changed = [true, true, true, true]
 				if status.starts_with('CVE request accepted;') {
 					status = 'CVE request accepted; assignment is asynchronous. g reload, s status'
 				}
@@ -885,7 +886,7 @@ fn tui(initial_api Repository, label string) {
 						api = result.repository
 						filter = 0
 						invalid = api.invalid_marks() or { status = 'local invalid tags: ${err}'; map[string]string{} }
-						changed = [true, true, true]
+						changed = [true, true, true, true]
 						loader.request(api, label, .advisories, false)
 						loader.request(api, label, .issues, false)
 					}
@@ -894,7 +895,7 @@ fn tui(initial_api Repository, label string) {
 					if result.error == '' && result.rows != advs {
 						advs = result.rows
 						links = advisory_links(advs)
-						changed = [true, true, true]
+						changed = [true, true, true, true]
 					} else if result.error != '' && !loaded[0] {
 						advs = [['error:', result.error]]
 						changed[0] = true
@@ -910,12 +911,17 @@ fn tui(initial_api Repository, label string) {
 					loaded[1] = true
 				}
 				.issues {
-					if result.error == '' && result.rows != items {
-						items, changed[2] = result.rows, true
-					} else if result.error != '' && !loaded[2] {
-						items, changed[2] = [['error:', result.error]], true
+					if result.error == '' {
+						issues := result.rows.filter(it.len >= 5 && it[2] == 'issue')
+						pulls := result.rows.filter(it.len >= 5 && it[2] in ['PR', 'MR'])
+						if issues != items { items, changed[2] = issues.clone(), true }
+						if pulls != prs { prs, changed[3] = pulls.clone(), true }
+					} else if !loaded[2] {
+						items = [['error:', result.error]]
+						prs = items.clone()
+						changed[2], changed[3] = true, true
 					}
-					loaded[2] = true
+					loaded[2], loaded[3] = true, true
 				}
 				.git_status { git_status = result.text }
 			}
@@ -924,7 +930,8 @@ fn tui(initial_api Repository, label string) {
 		w, h := terminal_size()
 		width := line_width(w)
 		layout := tui_layout(h, 3, 3)
-		for v, entries in [advs, cms, items] {
+		entries_by_view := [advs, cms, items, prs]
+		for v, entries in entries_by_view {
 			if changed[v] {
 				lists[v].rebuild(entries, advs, links, v)
 				lists[v].mark_invalid(entries, invalid)
@@ -932,20 +939,17 @@ fn tui(initial_api Repository, label string) {
 			}
 			lists[v].filter(entries, queries[v], if v == 0 { filters[filter] } else { 'all' })
 		}
-		visible := [lists[0].visible, lists[1].visible, lists[2].visible]
+		visible := lists.map(it.visible)
 		advisory_matches := lists[0].matches
 		page := layout.page
 		n := visible[view].len
 		sel[view] = if n == 0 { 0 } else { int_min(int_max(sel[view], 0), n - 1) }
 		top[view] = list_top(top[view], sel[view], n, page)
 		selected := if n > 0 { visible[view][sel[view]] } else { -1 }
-		input := if view == 1 && selected >= 0 && cms[selected].len > 2 {
-			cms[selected][0]
-		} else if view == 2 && selected >= 0 && items[selected].len >= 5 {
-			items[selected][0]
-		} else {
-			''
-		}
+		active_entries := entries_by_view[view]
+		input := if view > 0 && selected >= 0 && active_entries[selected].len >= 3 {
+			active_entries[selected][0]
+		} else { '' }
 		ai := if selected >= 0 { lists[view].links[selected] } else { -1 }
 		id := if ai >= 0 && ai < advs.len && advs[ai].len >= 5 { advs[ai][0] } else { '' }
 		target := if input != '' { input } else { id }
@@ -956,9 +960,10 @@ fn tui(initial_api Repository, label string) {
 			[]string{}
 		}
 		records_title := if api.provider == 'gitlab' { 'disclosures' } else { 'advisories' }
-		sources_title := if api.provider == 'gitlab' { 'issues/MRs' } else { 'issues/PRs' }
+		prs_title := if api.provider == 'gitlab' { 'MRs' } else { 'PRs' }
+		label_hint := if label == '' { 'all labels' } else { 'label: ${label}' }
 		mut tabs := ['${records_title} ${visible[0].len} (${filters[filter]})', 'commits ${visible[1].len}',
-			'${sources_title} ${visible[2].len} (${if label == '' { 'all labels' } else { label }})']
+			'issues ${visible[2].len} (${label_hint})', '${prs_title} ${visible[3].len} (${label_hint})']
 		repo_pending := loader.pending[int(TuiLoadKind.repository)]
 		for v in 0 .. tabs.len {
 			if !loaded[v] { tabs[v] += if v != 1 && api.repo == '' && !repo_pending { ' unavailable' } else { ' loading...' } }
@@ -978,7 +983,6 @@ fn tui(initial_api Repository, label string) {
 			'${'NUMBER':-8} ${'TYPE':-5} ${'STATE':-7} ${'ADVISORY':-20} TITLE'
 		}
 		mut body := []string{}
-		active_entries := if view == 0 { advs } else if view == 1 { cms } else { items }
 		for i in top[view] .. int_min(n, top[view] + page) {
 			index := visible[view][i]
 			body << lists[view].line(index, active_entries, advs, view, w, i == sel[view])
@@ -1041,7 +1045,7 @@ fn tui(initial_api Repository, label string) {
 			advisory_menu := if id == '' { '' } else {
 				actions.join('\n') + '\ns status details\nv view advisory\ne edit advisory\nr AI review\n' + if api.provider == 'github' { 'C manage credits\n' } else { '' }
 			}
-			source_menu := if input == '' { '' } else { 'r AI review selected source\n' + if view == 2 { 'M post discussion comment\n' } else { '' } }
+			source_menu := if input == '' { '' } else { 'r AI review selected source\n' + if view >= 2 { 'M post discussion comment\n' } else { '' } }
 			k = tui_dialog('Actions for ${target}\n${hint}\n\n${advisory_menu}' +
 				source_menu + 'i mark invalid locally / edit reason\nI remove local invalid tag\nb Find similar bugs\n\nChoose a key; Enter/Esc cancels.')
 			if k == 'v' {
@@ -1076,7 +1080,7 @@ fn tui(initial_api Repository, label string) {
 						sel[0] = visible[0].index(ai)
 					}
 				} else if next != 0 && ai >= 0 {
-					entries := if next == 1 { cms } else { items }
+					entries := entries_by_view[next]
 					for c, index in visible[next] {
 						entry := entries[index]
 						if entry.len >= 3 && adv_of([advs[ai]], entry[0]) == 0 {
@@ -1109,7 +1113,7 @@ fn tui(initial_api Repository, label string) {
 			'g' {
 				if api.repo != '' {
 					invalid = api.invalid_marks() or { status = 'local invalid tags: ${err}'; invalid.clone() }
-					changed = [true, true, true]
+					changed = [true, true, true, true]
 				}
 				loader.request(api, label, .commits, false)
 				loader.request(api, label, .git_status, false)
@@ -1137,14 +1141,14 @@ fn tui(initial_api Repository, label string) {
 					invalid = api.invalid_marks() or { status = 'error: ${err}'; continue }
 					status = 'Removed local invalid tag from ${target}'
 				}
-				changed = [true, true, true]
+				changed = [true, true, true, true]
 			}
 			'\n', '\r', 'e', 'r', 'b', 'n', 's', 'C', 'M', '?' {
 				if api.repo == '' && k != '?' && !(view == 1 && k in ['\n', '\r']) {
 					status = 'Repository unavailable; wait for loading or press g to retry'
 					continue
 				}
-				if k == 'M' && view != 2 { status = 'select an issue/PR/MR to comment'; continue }
+				if k == 'M' && view < 2 { status = 'select an issue/PR/MR to comment'; continue }
 				if id == '' && (k in ['e', 's', 'C'] || (k in ['\n', '\r', 'b', 'r', 'M'] && input == '')) {
 					status = 'no advisory selected; press n to create a draft'
 					continue

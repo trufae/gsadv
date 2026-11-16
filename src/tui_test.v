@@ -69,10 +69,11 @@ fn test_small_layouts_and_scroll_limits() {
 }
 
 fn test_tabs_keep_all_views_until_the_compact_row_no_longer_fits() {
-	tabs := ['advisories 12 (all)', 'commits 34', 'issues/PRs 5 (cve)']
-	assert tui_tabs(tabs, 0, 90) == term.inverse('[advisories 12 (all)]') + ' | commits 34 | issues/PRs 5 (cve)'
-	assert tui_tabs(tabs, 1, 40) == 'advisories | ' + term.inverse('[commits]') + ' | issues/PRs'
-	assert tui_tabs(tabs, 2, 40) == 'advisories | commits | ' + term.inverse('[issues/PRs]')
+	tabs := ['advisories 12 (all)', 'commits 34', 'issues 5 (label: cve)', 'PRs 7 (label: cve)']
+	assert tui_tabs(tabs, 0, 120) == term.inverse('[advisories 12 (all)]') + ' | commits 34 | issues 5 (label: cve) | PRs 7 (label: cve)'
+	assert tui_tabs(tabs, 1, 40) == 'advisories | ' + term.inverse('[commits]') + ' | issues | PRs'
+	assert tui_tabs(tabs, 2, 40) == 'advisories | commits | ' + term.inverse('[issues]') + ' | PRs'
+	assert tui_tabs(tabs, 3, 40) == 'advisories | commits | issues | ' + term.inverse('[PRs]')
 	assert tui_tabs(tabs, 1, 20) == term.inverse('[commits 34]')
 	for view in 0 .. tabs.len {
 		for width in 1 .. 100 {

@@ -8,7 +8,7 @@
 | `GSADV_REMOTE` | upstream, origin, sole remote | select a Git remote explicitly |
 | `GSADV_ADVISORY_LABEL` | `security-advisory` | GitLab disclosure issue label for `ls`, the disclosures tab and `new` |
 | `GSADV_GREP` | `##(crash\|security\|vulnerability\|sandbox)` | `git log -E --grep` pattern; empty includes all of the latest 2000 commits |
-| `GSADV_LABEL` | `cve` | label for the issues/PRs/MRs tab and `issues`; empty includes unlabelled items; includes all states |
+| `GSADV_LABEL` | `cve` | label shared by the separate issues and PRs/MRs tabs and `issues`; empty includes unlabelled items; includes all states |
 | `GSADV_AI` | `claude -p` | agent command, prompt on stdin; see [progress and recovery](ai-agent.md#progress-and-recovery) |
 | `EDITOR` | `vi` | editor for drafts and reviews |
 | `PAGER` | `less` | advisory and issue/PR viewer when `r2` is not on `PATH` |

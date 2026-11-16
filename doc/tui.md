@@ -11,7 +11,7 @@ Press `g` to refresh release data. See [release matching](usage.md#ls) for the s
 meanings and limits.
 
 Running `gsadv` with no command opens the TUI. The header identifies the provider, host
-and project. GitLab uses a disclosures tab and an issues/MRs tab; see [GitLab support](gitlab.md).
+and project. GitLab uses a disclosures tab and calls pull requests MRs; see [GitLab support](gitlab.md).
 
 ```sh
 cd ~/radare2
@@ -24,9 +24,12 @@ Views, switched forward with `tab` and backward with `shift-tab`:
 | --- | --- |
 | advisories | GHSA id, state, CVE id, severity, summary |
 | commits | commits matching `GSADV_GREP` (empty: all of the latest 2000), date, subject, and linked advisory |
-| issues/PRs | items with `GSADV_LABEL` (default `cve`, or `gsadv tui <label>`), number, type, state, linked advisory and title |
+| issues | issues matching `GSADV_LABEL` (default `cve`, or `gsadv tui <label>`), number, state, linked advisory and title |
+| PRs / MRs | pull/merge requests matching the same label, number, state, linked advisory and title |
 
-The issues/PRs tab is always available and shows its label in the header. It includes every state, so
+The issues and PRs/MRs tabs keep their own search, selection and scroll position. Both show
+`label: cve` (or the configured label) in the header; `--label ''` shows `all labels` and
+includes unlabelled items. Both include every state, so
 closed issues and merged PRs remain available for reporting. `closed` in this list can
 mean either a merged or a closed, unmerged PR; `enter` shows its merge metadata.
 

@@ -13,7 +13,7 @@ $ gsadv new 8f3a2c1 found by fuzzing the PDB parser
 
 ## What it does
 
-- Lists advisories/disclosures, local fix commits, and labeled issues/PRs/MRs.
+- Lists advisories/disclosures, local commits, issues and PRs/MRs in separate tabs.
 - Drafts an advisory from a commit or GitHub/GitLab issue/PR/MR URL: the agent reads the report,
   discussion, patch, history and tags, then writes root cause, CWE, CVSS and versions.
   Evidence, caveats and related finding references belong in the advisory text.
@@ -100,7 +100,10 @@ git push origin main 0.1.0
 gsadv [-r namespace/repo|url] [--provider github|gitlab] [--host hostname] [--remote name] [command] [args]
 ```
 
-Run `gsadv` with no arguments for the TUI (advisory/disclosure, commit and labeled issues/PRs/MRs tabs).
+Run `gsadv` with no arguments for the TUI: advisories/disclosures, commits, issues,
+and PRs (MRs on GitLab) each have their own tab. Searches, selections and scrolling
+are independent. The issue and PR/MR headers show `label: cve` by default, or
+`all labels` with `--label ''`.
 The screen opens immediately while repository detection, remote lists and local Git
 details load in background threads. Each tab becomes usable as its data arrives;
 navigation and quitting stay responsive during loading and reloads. Reload failures
