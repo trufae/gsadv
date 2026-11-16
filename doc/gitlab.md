@@ -145,8 +145,8 @@ with gsadv does not add a database entry or publish a CVE.
 
 ```sh
 build_dir=$(mktemp -d)
-v -o "$build_dir/gsadv" .
-v test .
+v -o "$build_dir/gsadv" src
+v test src
 python3 test/gitlab_smoke.py "$build_dir/gsadv"
 ```
 

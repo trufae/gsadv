@@ -23,10 +23,10 @@ jobs:
       - name: Build and test
         run: |
           v version
-          v -prod -o gsadv .
+          v -prod -o gsadv src
           ./gsadv --help
           ./gsadv --version
-          v test .
+          v test src
           python3 test/gitlab_smoke.py ./gsadv
       - name: Package
         run: tar -czf "gsadv-macos-$(uname -m).tar.gz" gsadv VERSION README.md doc
@@ -54,10 +54,10 @@ jobs:
               export VFLAGS="-cc gcc"
               make -C /opt/v
               v version
-              v -prod -cflags -static -o gsadv .
+              v -prod -cflags -static -o gsadv src
               ./gsadv --help
               ./gsadv --version
-              v test .
+              v test src
               python3 test/gitlab_smoke.py ./gsadv
             '
       - name: Package

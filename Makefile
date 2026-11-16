@@ -1,12 +1,12 @@
 PREFIX ?= $(HOME)/.local
 BINDIR ?= $(PREFIX)/bin
-SRC = $(filter-out %_test.v,$(wildcard *.v))
+SRC = $(filter-out %_test.v,$(wildcard src/*.v))
 BIN = gsadv
 
 all: $(BIN)
 
 $(BIN): $(SRC) VERSION
-	v -o $(BIN) .
+	v -o $(BIN) src
 
 install: $(BIN)
 	mkdir -p $(BINDIR)

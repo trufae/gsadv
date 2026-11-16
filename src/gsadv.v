@@ -2,7 +2,7 @@ module main
 
 import os
 
-const version = $embed_file('VERSION').to_string().trim_space()
+const version = $embed_file('../VERSION').to_string().trim_space()
 
 // Prefer the current name, including explicitly empty settings, then legacy aliases.
 fn setting(name string) ?string {

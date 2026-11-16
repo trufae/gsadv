@@ -26,8 +26,8 @@ Short version of the reasoning behind the tool.
 
 ## Limitations
 
-- Focused source-URL and advisory-link tests run with `v test gsadv_test.v`. Build with
-  `v -o gsadv .`. Run `v test .` for all focused tests and
+- Focused source-URL and advisory-link tests run with `v test src/gsadv_test.v`. Build with
+  `v -o gsadv src`. Run `v test src` for all focused tests and
   `python3 test/gitlab_smoke.py /path/to/gsadv` for offline GitHub/GitLab integration
   checks with stub CLIs, including POSIX TUI checks.
 - The commit view only sees commits matching `GSADV_GREP` in the local checkout.

@@ -4,13 +4,13 @@
 GitHub requests use `gh api`; GitLab requests use `glab api`. API arguments are arrays,
 and each request receives the resolved host explicitly.
 
-`gsadv.v` parses arguments and dispatches commands. `repository.v` resolves provider,
-host and project identity from options, source URLs and Git remotes. `provider.v`
-exposes shared repository operations and supported states/actions. `github.v` and
-`gitlab.v` own their respective endpoints, payloads and response handling.
-`workflow.v` handles AI/editor review and recovery, `advisory.v` handles the editable
-format, `sources.v` handles source URLs and local commits, and `triage.v` persists
-local annotations. `tui.v` and `tui_data.v` use the same operations as the CLI.
+`src/gsadv.v` parses arguments and dispatches commands. `src/repository.v` resolves provider,
+host and project identity from options, source URLs and Git remotes. `src/provider.v`
+exposes shared repository operations and supported states/actions. `src/github.v` and
+`src/gitlab.v` own their respective endpoints, payloads and response handling.
+`src/workflow.v` handles AI/editor review and recovery, `src/advisory.v` handles the editable
+format, `src/sources.v` handles source URLs and local commits, and `src/triage.v` persists
+local annotations. `src/tui.v` and `src/tui_data.v` use the same operations as the CLI.
 
 The common list rows retain native state and identifiers. GitLab disclosure rows add a
 separate visibility field; CVE values are extracted references. No issue is promoted to

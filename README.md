@@ -64,9 +64,11 @@ git clone https://github.com/trufae/gsadv.git && cd gsadv
 make BIN=gsadv install   # builds and installs gsadv into ~/.local/bin
 ```
 
-Or build only: `make` (defaults to `gsadv`), or `v -o gsadv .`. `BIN`, `PREFIX` and
+Or build only: `make` (defaults to `gsadv`), or `v -o gsadv src`. `BIN`, `PREFIX` and
 `BINDIR` are overridable; `make uninstall` and `make clean` exist. Use the same `BIN`
 value for install, uninstall and clean.
+
+V source files and unit tests live in `src/`. Run the unit tests with `v test src`.
 
 Check the installed version with `gsadv --version` (also `-v` or `version`).
 The first release reports `gsadv 0.1.0`; version and help work without a repository
