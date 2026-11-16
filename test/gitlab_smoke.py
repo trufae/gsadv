@@ -1,6 +1,7 @@
 #!/usr/bin/env python3
 """Offline integration checks: python3 test/gitlab_smoke.py /path/to/gsadv."""
 import json
+from contextlib import ExitStack
 import os
 from pathlib import Path
 import re
@@ -20,7 +21,11 @@ def stub():
     if client == 'r2':
         return
     if client == 'agent':
-        (root / 'prompt').write_text(sys.stdin.read())
+        prompt = sys.stdin.read()
+        (root / 'prompt').write_text(prompt)
+        if prompt.startswith('Review this commit, issue or pull/merge request'):
+            print('## Review\nCheck the parser bounds before reading.\nVerified the supplied diff.')
+            sys.exit(1 if os.environ.get('FAIL_AI') else 0)
         print('summary: Reviewed report\nseverity: high\ncwe: CWE-125\ncredits: alice:finder\n'
               'package: parser\necosystem: other\naffected: < 2\npatched: 2\n---\n'
               'Verified bounds check. CVE-2026-12345\n'
@@ -37,6 +42,21 @@ def stub():
         sys.exit('403 Forbidden: fixture denied access')
     if client == 'gh':
         assert host in ['github.com', 'code.example']
+        if path.split('?')[0] == 'repos/owner/repo/issues/42/comments':
+            if method == 'POST':
+                assert set(payload) == {'body'} and payload['body'].strip()
+                print(f'https://{host}/owner/repo/pull/42#issuecomment-99')
+            else:
+                print('### @alice\nDiscussion evidence')
+            return
+        if path.startswith('repos/owner/repo/issues?'):
+            if 'labels=' not in path:
+                print(f'https://{host}/owner/repo/pull/42\t42\tPR\topen\tUnlabelled pull request')
+            return
+        if path == 'repos/owner/repo/pulls/42':
+            print('diff --git a/parser.c b/parser.c\n-old\n+fixed' if '-H' in args
+                  else '# Unlabelled pull request\nState: open\nReport body')
+            return
         if '/releases?' in path:
             assert '--paginate' in args and 'per_page=100' in path
             if os.environ.get('FAIL_RELEASES') == 'silent':
@@ -63,7 +83,10 @@ def stub():
     issues = json.loads(state_path.read_text())
     endpoint = urlsplit(path).path.split('/', 2)[2]
     query = parse_qs(urlsplit(path).query)
-    if method == 'POST':
+    if method == 'POST' and endpoint.endswith('/notes'):
+        assert set(payload) == {'body'} and payload['body'].strip()
+        result = dict(id=99, body=payload['body'])
+    elif method == 'POST':
         assert endpoint == 'issues' and payload['confidential'] is True
         iid = str(max(map(int, issues)) + 1)
         issues[iid] = dict(iid=int(iid), title=payload['title'], description=payload['description'],
@@ -85,7 +108,7 @@ def stub():
         result = [dict(tag_name='v2', released_at='2020-01-01T00:00:00Z'),
                   dict(tag_name='3', released_at='2999-01-01T00:00:00Z', upcoming_release=True)]
     elif endpoint == 'issues':
-        result = [i for i in issues.values() if query['labels'][0] in i['labels']
+        result = [i for i in issues.values() if ('labels' not in query or query['labels'][0] in i['labels'])
                   and (query['state'][0] == 'all' or query['state'][0] == i['state'])]
     elif endpoint == 'merge_requests' or endpoint == 'merge_requests/42':
         mr = dict(iid=42, title='Fix parser', description='Merge request report', state='merged',
@@ -117,7 +140,7 @@ def stub():
 
 def main():
     binary = str(Path(sys.argv[1]).resolve())
-    with tempfile.TemporaryDirectory(prefix='gsadv-gitlab-smoke-') as directory:
+    with tempfile.TemporaryDirectory(prefix='gsadv-gitlab-smoke-') as directory, ExitStack() as cleanup:
         root = Path(directory)
         version = (Path(__file__).resolve().parents[1] / 'VERSION').read_text().strip()
         for option in ['--version', '-v', 'version']:
@@ -147,7 +170,10 @@ def main():
             p = subprocess.run([binary, *args], cwd=root, env=dict(env, **(overrides or {})),
                                input=stdin, text=True, capture_output=True, timeout=30)
             assert (p.returncode == 0) == (expected == 0), (args, p.stdout, p.stderr)
-            return p.stdout + p.stderr
+            output = p.stdout + p.stderr
+            for path in re.findall(r'^Recovery files: (.+)$', output, re.M):
+                cleanup.callback(shutil.rmtree, path, ignore_errors=True)
+            return output
 
         def calls():
             return [json.loads(line) for line in (root / 'calls').read_text().splitlines()]
@@ -162,6 +188,68 @@ def main():
         assert 'GL-42' in run('ls', overrides=dict(legacy, GSADV_PROVIDER='', GSADV_REPO=''))
         assert 'GL-42' in run('--provider', 'gitlab', '-r', 'https://gitlab.com/group/sub/repo', 'ls', overrides=legacy)
         assert 'MR' in run('issues') and 'merged' in run('issues')
+        for overrides in [{'GSADV_LABEL': ''}, {'GHADV_LABEL': ''}]:
+            assert 'MR' in run('issues', overrides=overrides)
+            assert all('labels=' not in c['path'] for c in calls()[-2:])
+        run('--label', '', 'issues', overrides={'GSADV_LABEL': 'missing'})
+        assert all('labels=' not in c['path'] for c in calls()[-2:])
+        run('issues', '', overrides={'GSADV_LABEL': 'cve'})
+        assert all('labels=' not in c['path'] for c in calls()[-2:])
+        subprocess.run(['git', '-C', str(root), 'config', '--local', 'gsadv.label', 'custom label'], check=True)
+        run('issues')
+        assert all('labels=custom+label' in c['path'] for c in calls()[-2:])
+        run('issues', overrides={'GHADV_LABEL': 'cve'})
+        assert all('labels=cve' in c['path'] for c in calls()[-2:])
+        run('--label', 'other', 'issues', overrides={'GSADV_LABEL': 'cve'})
+        assert all('labels=other' in c['path'] for c in calls()[-2:])
+        subprocess.run(['git', '-C', str(root), 'config', '--unset', 'gsadv.label'], check=True)
+        for subject in ['Ordinary work', 'Fix parser', 'Tagged fix ##security']:
+            subprocess.run(['git', '-C', str(root), '-c', 'user.name=Fixture',
+                            '-c', 'user.email=fixture@example.invalid', 'commit', '--allow-empty',
+                            '-qm', subject], check=True)
+        output = run('log')
+        assert 'Tagged fix' in output and 'Ordinary work' not in output and 'Fix parser' not in output
+        subprocess.run(['git', '-C', str(root), 'config', '--local', 'gsadv.grep', '^Fix'], check=True)
+        output = run('log')
+        assert 'Fix parser' in output and 'Ordinary work' not in output and 'Tagged fix' not in output
+        output = run('--grep', '', 'log')
+        assert all(subject in output for subject in ['Ordinary work', 'Fix parser', 'Tagged fix'])
+        output = run('log', overrides={'GSADV_GREP': '', 'GHADV_GREP': '^Fix'})
+        assert 'Ordinary work' in output
+        subprocess.run(['git', '-C', str(root), 'config', '--unset', 'gsadv.grep'], check=True)
+        run('-r', 'https://github.com/owner/repo', '--label', '', 'issues')
+        assert 'labels=' not in calls()[-1]['path']
+        assert calls()[-1]['client'] == 'gh'
+        for url, client in [('https://github.com/owner/repo/pull/42', 'gh'),
+                            ('https://gitlab.com/group/sub/repo/-/merge_requests/42', 'glab')]:
+            count = len(calls())
+            output = run('comment', url, 'Manual review with "quotes"\nand another line.', stdin='n\n')
+            assert len(calls()) == count
+            recovery = re.search(r'Recovery files: (.+)', output).group(1)
+            assert 'Comment posted:' in run('resume', recovery, stdin='y\n', overrides={'GSADV_AI': 'false'})
+            assert calls()[-1]['client'] == client and calls()[-1]['method'] == 'POST'
+            assert calls()[-1]['payload'] == {'body': 'Manual review with "quotes"\nand another line.'}
+            count = len(calls())
+            assert 'already posted' in run('resume', recovery, overrides={'EDITOR': 'false'})
+            assert len(calls()) == count
+            output = run('review', url, 'Check bounds and tests', stdin='n\n')
+            assert 'Comment saved' in output
+            assert 'Extra context: Check bounds and tests' in (root / 'prompt').read_text()
+            assert '+fixed' in (root / 'prompt').read_text()
+            assert all(c['method'] == 'GET' for c in calls()[count:])
+            assert all('security-advisories' not in c['path'] for c in calls()[count:])
+            recovery = re.search(r'Recovery files: (.+)', output).group(1)
+            run('resume', recovery, stdin='y\n', overrides={'GSADV_AI': 'false'})
+            assert calls()[-1]['payload']['body'].startswith('## Review')
+        count = len(calls())
+        run('review', 'https://gitlab.com/group/sub/repo/-/merge_requests/42', expected=1, overrides={'FAIL_AI': '1'})
+        assert all(c['method'] == 'GET' for c in calls()[count:])
+        run('comment', 'https://github.com/owner/repo/pull/42', 'Never posted', expected=1, overrides={'EDITOR': 'false'})
+        assert all(c['method'] == 'GET' for c in calls()[count:])
+        run('comment', 'https://github.com/owner/repo/pull/42', stdin='y\n')
+        assert all(c['method'] == 'GET' for c in calls()[count:])
+        assert 'Review report saved' in run('review', 'a'*40)
+        assert all(c['method'] == 'GET' for c in calls()[count:])
         assert 'visibility: confidential' in run('status', 'GL-42')
         count = len(calls())
         run('invalid', 'GL-42', 'No released version affected')

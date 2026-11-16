@@ -4,23 +4,28 @@ import os
 
 const version = $embed_file('../VERSION').to_string().trim_space()
 
-// Prefer the current name, including explicitly empty settings, then legacy aliases.
+// Prefer explicit environment settings, including empty values, then Git configuration.
 fn setting(name string) ?string {
-	return os.getenv_opt('GSADV_${name}') or { return os.getenv_opt('GHADV_${name}') }
+	if value := os.getenv_opt('GSADV_${name}') { return value }
+	if value := os.getenv_opt('GHADV_${name}') { return value }
+	r := os.exec(['git', 'config', '--get', 'gsadv.${name.to_lower().replace('_', '-')}'])
+	if r.exit_code != 0 { return none }
+	return r.output.trim_right('\r\n')
 }
 
-const help = 'Usage: gsadv [-r namespace/repo|url] [--provider github|gitlab] [--host hostname] [--remote name] [command] [args]
+const help = 'Usage: gsadv [-r namespace/repo|url] [--provider github|gitlab] [--host hostname] [--remote name] [--label label] [--grep regex] [command] [args]
   --version, -v, version   print the tool version
-  tui [label]              advisory, commit and labeled issues/PRs tabs (default)
+  tui [label]              advisory, commit and issues/PRs tabs (default)
   ls [state]               GitHub advisories or GitLab disclosure issues (opened/closed)
-  log                     list tagged fix commits and their advisories
-  issues [label]           list labeled issues/PRs (default: GSADV_LABEL or cve)
+  log                     list matching commits and their advisories
+  issues [label]           list issues/PRs (default label: GSADV_LABEL or cve)
   new <commit|url> [context] analyze a commit, issue or PR/MR with AI and create a draft
   show <id>               print advisory
   status <id>             show lifecycle, CVE and private report details
   credits <id>            manage credited people and roles in the TUI
   edit <id>               edit advisory in \$EDITOR
-  review <id> [context]   let the AI review/rewrite it, then edit
+  review <id|commit|url> [context] review an advisory or source with AI, then edit
+  comment <issue|PR URL> [text] edit a discussion comment, then confirm posting
   similar <id|commit|url> [context] find similar bugs using the selection as a template
   resume <directory>       continue saved work without running the AI again
   recover <log|directory> [opts] turn a saved claude.jsonl into Markdown (partial replies)
@@ -39,28 +44,29 @@ Environment:
   GSADV_REMOTE    Git remote to use instead of upstream/origin
   GSADV_ADVISORY_LABEL  GitLab disclosure label (default: security-advisory)
   GSADV_REPO   default repository (otherwise taken from the cwd checkout)
-  GSADV_GREP   git log -E --grep for fix commits (default: ##(crash|security|vulnerability|sandbox))
-  GSADV_LABEL  issues/PRs label (default: cve; includes open and closed items)
+  GSADV_GREP   git log -E --grep (default: ##(crash|security|vulnerability|sandbox); empty: all commits)
+  GSADV_LABEL  issues/PRs label (default: cve; empty: all labels; includes open and closed items)
+  --label and --grep override these settings; use an empty value to disable a filter.
+  Per-repository defaults: git config --local gsadv.label security; git config --local gsadv.grep fix
   GSADV_AI     agent command, prompt is piped to stdin (default: claude -p)
                progress goes to stderr; replies are saved for recovery
                e.g. "codex exec -", \'pmai --progress "\$(cat)"\', \'opencode run "\$(cat)"\''
 
-fn issue_label(label string) string {
-	if label != '' {
-		return label
-	}
-	configured := setting('LABEL') or { '' }
-	return if configured != '' { configured } else { 'cve' }
+fn issue_label(args []string) string {
+	if args.len > 1 { return args[1] }
+	return setting('LABEL') or { 'cve' }
 }
 
 fn main() {
 	mut args := os.args[1..].clone()
-	for args.len > 0 && args[0] in ['-r', '--provider', '--host', '--remote'] {
+	for args.len > 0 && args[0] in ['-r', '--provider', '--host', '--remote', '--label', '--grep'] {
 		if args.len < 2 { eprintln('missing value for ${args[0]}'); exit(1) }
 		name := match args[0] {
 			'-r' { 'GSADV_REPO' }
 			'--provider' { 'GSADV_PROVIDER' }
 			'--host' { 'GSADV_HOST' }
+			'--label' { 'GSADV_LABEL' }
+			'--grep' { 'GSADV_GREP' }
 			else { 'GSADV_REMOTE' }
 		}
 		os.setenv(name, args[1], true)
@@ -96,10 +102,10 @@ fn main() {
 		return
 	}
 	if cmd == 'tui' {
-		tui(GitHub{}, issue_label(id))
+		tui(GitHub{}, issue_label(args))
 		return
 	}
-	input := if cmd in ['new', 'similar', 'invalid', 'unmark'] { id } else { '' }
+	input := if cmd in ['new', 'review', 'comment', 'similar', 'invalid', 'unmark'] { id } else { '' }
 	api := configured_repository(input) or {
 		eprintln('cannot select repository: ${err}')
 		exit(1)
@@ -131,7 +137,7 @@ fn main() {
 		'issues' {
 			marks := api.invalid_marks()!
 			advs := api.advisories('')!
-			for item in api.issues(issue_label(id))! {
+			for item in api.issues(issue_label(args))! {
 				println(marked_row(irow(item, advs, 999), marks[invalid_key(item[0])], 999))
 			}
 		}
@@ -182,7 +188,14 @@ fn main() {
 			}
 		}
 		'review' {
-			cmd_review(api, id, ctx) or {
+			if api.is_advisory(id) {
+				cmd_review(api, id, ctx) or { eprintln('error: ${err}'); exit(1) }
+			} else {
+				cmd_source_review(api, id, ctx) or { eprintln('error: ${err}'); exit(1) }
+			}
+		}
+		'comment' {
+			cmd_comment(api, id, ctx) or {
 				eprintln('error: ${err}')
 				exit(1)
 			}

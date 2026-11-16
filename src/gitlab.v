@@ -120,6 +120,13 @@ fn (api GitLab) send(method string, path string, payload string) !string {
 	return api.request('--method', method, path, '--input', file)
 }
 
+fn (api GitLab) comment(s Source, body string) !string {
+	note := json2.decode[GitLabNote](api.send('POST', '${api.project()}/${s.kind}/${s.ref}/notes',
+		json2.encode({'body': body}))!)!
+	if note.id == 0 { return error('Comment accepted but no note ID returned; check ${s.url} before retrying') }
+	return '${s.url}#note_${note.id}'
+}
+
 fn (api GitLab) list[T](path string) ![]T {
 	out := api.request(path, '--paginate', '--output', 'ndjson')!
 	mut items := []T{}
@@ -214,10 +221,10 @@ fn (api GitLab) list_advisories(state string) ![][]string {
 }
 
 fn (api GitLab) issues(label string) ![][]string {
-	if label == '' { return [][]string{} }
+	filter := if label == '' { '' } else { '&labels=${urllib.query_escape(label)}' }
 	mut rows := [][]string{}
 	for kind in ['issues', 'merge_requests'] {
-		for item in api.list[GitLabIssue]('${api.project()}/${kind}?scope=all&state=all&per_page=100&labels=${urllib.query_escape(label)}')! {
+		for item in api.list[GitLabIssue]('${api.project()}/${kind}?scope=all&state=all&per_page=100${filter}')! {
 			rows << [item.web_url, item.iid.str(), if kind == 'issues' { 'issue' } else { 'MR' },
 				item.state, item.title]
 		}

@@ -143,7 +143,8 @@ Key commands:
 | `status <id>` | lifecycle, CVE and report details |
 | `credits <id>` | manage GitHub credits in the TUI |
 | `edit <id>` | edit in `$EDITOR` |
-| `review <id> [context]` | AI review, then edit |
+| `review <id\|commit\|url> [context]` | AI review an advisory or source, then edit |
+| `comment <issue\|PR URL> [text]` | edit and confirm a discussion comment |
 | `similar <id\|commit\|url> [context]` | find similar bugs |
 | `resume <dir>` | continue saved work |
 | `recover <log\|dir>` | turn a saved `claude.jsonl` into Markdown when the reply is lost |
@@ -163,9 +164,28 @@ See [invalid tags](doc/usage.md#invalid--unmark).
 
 The `log` command and TUI commit tab include commits tagged `##crash`, `##security`,
 `##vulnerability` or `##sandbox` by default. Override the pattern with `GSADV_GREP`.
+The issue/PR/MR list defaults to the `cve` label. Use `--grep` and `--label` before
+the command to override these filters; an empty value disables the corresponding filter:
+
+```sh
+gsadv --label '' --grep ''              # browse all issues/PRs and the latest 2000 commits
+gsadv --label bug --grep 'fix|security'  # use another repository's conventions
+git config --local gsadv.label ''       # keep unlabelled PRs visible in this checkout
+git config --local gsadv.grep 'fix|bug'  # repository-specific commit pattern
+gsadv review https://github.com/owner/repo/pull/123 "Check error handling"
+gsadv comment https://github.com/owner/repo/pull/123
+```
+
+Source reviews use the diff and discussion without needing labels or a linked advisory.
+In the commit or issue/PR/MR tab, `r` reviews the selected source; `M` composes a comment
+on the selected issue/PR/MR. Reviews open in `$EDITOR`, then show a preview and ask before
+posting a discussion comment. Commit reviews stay as local reports. Empty the editor to
+cancel; `resume <directory>` reopens saved text without running the AI again. Posting
+receipts prevent a later resume from posting the same saved comment again.
 
 Configuration lives in `GSADV_REPO`, `GSADV_LABEL`, `GSADV_AI`, `GSADV_GREP`, plus `$EDITOR`
-and `$PAGER`. See [doc/configuration.md](doc/configuration.md).
+and `$PAGER`. Environment variables override `git config gsadv.<name>` defaults.
+See [doc/configuration.md](doc/configuration.md).
 
 AI workflows show live progress on stderr and an elapsed-time update every 10 seconds.
 The Claude preset shows messages, Bash commands and descriptions, file paths and search

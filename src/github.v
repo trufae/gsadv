@@ -143,11 +143,9 @@ fn (api GitHub) request_cve(id string) !string {
 
 // The issues endpoint includes pull requests. Closed items may still need a CVE.
 fn (api GitHub) issues(label string) ![][]string {
-	if label == '' {
-		return [][]string{}
-	}
+	filter := if label == '' { '' } else { '&labels=${urllib.query_escape(label)}' }
 	out := api.request('--paginate',
-		'repos/${api.repo}/issues?state=all&per_page=100&labels=${urllib.query_escape(label)}',
+		'repos/${api.repo}/issues?state=all&per_page=100${filter}',
 		'--jq', '.[] | [(.pull_request.html_url // .html_url), .number, (if .pull_request then "PR" else "issue" end), .state, .title] | @tsv')!
 	return out.split_into_lines().filter(it != '').map(it.split('\t'))
 }
@@ -163,16 +161,21 @@ fn (api GitHub) credits(id string) ![]Credit {
 
 fn (api GitHub) update_credits(id string, credits []Credit) ! {
 	api.send('PATCH', 'repos/${api.repo}/security-advisories/${id}',
-		json2.encode(AdvisoryCredits{ credits: credits }))!
+		json2.encode(AdvisoryCredits{ credits: credits }), '.ghsa_id')!
 }
 
-fn (api GitHub) send(method string, path string, payload string) !string {
+fn (api GitHub) send(method string, path string, payload string, query string) !string {
 	f := os.join_path(os.temp_dir(), 'gsadv-${os.getpid()}.json')
 	os.write_file(f, payload)!
 	defer {
 		os.rm(f) or {}
 	}
-	return api.request('--method', method, path, '--input', f, '--jq', '.ghsa_id')
+	return api.request('--method', method, path, '--input', f, '--jq', query)
+}
+
+fn (api GitHub) comment(s Source, body string) !string {
+	return api.send('POST', 'repos/${api.repo}/issues/${s.ref}/comments',
+		json2.encode({'body': body}), '.html_url')!.trim_space()
 }
 
 fn (api GitHub) set_state(id string, state string) ! {
@@ -180,11 +183,11 @@ fn (api GitHub) set_state(id string, state string) ! {
 }
 
 fn (api GitHub) create_advisory(a Adv) !string {
-	return api.send('POST', 'repos/${api.repo}/security-advisories', json2.encode(a))!.trim_space()
+	return api.send('POST', 'repos/${api.repo}/security-advisories', json2.encode(a), '.ghsa_id')!.trim_space()
 }
 
 fn (api GitHub) write_advisory(id string, a Adv) ! {
-	api.send('PATCH', 'repos/${api.repo}/security-advisories/${id}', json2.encode(a))!
+	api.send('PATCH', 'repos/${api.repo}/security-advisories/${id}', json2.encode(a), '.ghsa_id')!
 }
 
 fn (api GitHub) request(args ...string) !string {

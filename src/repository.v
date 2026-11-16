@@ -15,6 +15,7 @@ interface Repository {
 	status(id string) !string
 	issues(label string) ![][]string
 	source_text(s Source, with_patch bool) !string
+	comment(s Source, body string) !string
 	create_advisory(a Adv) !string
 	write_advisory(id string, a Adv) !
 	set_state(id string, state string) !

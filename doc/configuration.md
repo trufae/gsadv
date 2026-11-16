@@ -7,8 +7,8 @@
 | `GSADV_HOST` | URL/remote host | API server hostname, optionally with HTTPS port |
 | `GSADV_REMOTE` | upstream, origin, sole remote | select a Git remote explicitly |
 | `GSADV_ADVISORY_LABEL` | `security-advisory` | GitLab disclosure issue label for `ls`, the disclosures tab and `new` |
-| `GSADV_GREP` | `##(crash\|security\|vulnerability\|sandbox)` | `git log -E --grep` pattern for fix commits |
-| `GSADV_LABEL` | `cve` | label for the issues/PRs/MRs tab and `issues` command; includes open and closed items |
+| `GSADV_GREP` | `##(crash\|security\|vulnerability\|sandbox)` | `git log -E --grep` pattern; empty includes all of the latest 2000 commits |
+| `GSADV_LABEL` | `cve` | label for the issues/PRs/MRs tab and `issues`; empty includes unlabelled items; includes all states |
 | `GSADV_AI` | `claude -p` | agent command, prompt on stdin; see [progress and recovery](ai-agent.md#progress-and-recovery) |
 | `EDITOR` | `vi` | editor for drafts and reviews |
 | `PAGER` | `less` | advisory and issue/PR viewer when `r2` is not on `PATH` |
@@ -21,11 +21,26 @@ Saved CVE request records and invalid tags keep their original `ghadv` directory
 `XDG_STATE_HOME`, so upgrading preserves existing data. Recovery directories created
 by `ghadv` can still be opened with `gsadv resume`.
 
-`-r`, `--provider`, `--host` and `--remote` override the corresponding `GSADV_*` setting.
+Every `GSADV_*` setting can also use Git configuration: lowercase the name and replace
+underscores with hyphens, such as `gsadv.label`, `gsadv.grep` and `gsadv.advisory-label`.
+Environment variables (including legacy aliases) take precedence over Git configuration;
+unset values use the built-in defaults. An explicitly empty filter means all items.
+Git configuration follows the current checkout, including when `-r` selects another project.
+
+```sh
+git config --local gsadv.label ''         # all issues/PRs/MRs in this checkout
+git config --local gsadv.grep 'fix|bug'    # custom commit pattern
+git config --global gsadv.label security  # default for your other checkouts
+gsadv --label '' --grep ''                # override both filters for one run
+```
+
+`-r`, `--provider`, `--host`, `--remote`, `--label` and `--grep` override the corresponding `GSADV_*` setting.
 Put them before the command. See [repository selection](gitlab.md#setup-and-repository-selection).
-For `new <url>` (also `similar`, `invalid` and `unmark`), the URL supplies the repository before the cwd checkout is consulted;
+For `new <url>` (also `review`, `comment`, `similar`, `invalid` and `unmark`), the URL supplies the repository before the cwd checkout is consulted;
 it must match an explicit `-r` or `GSADV_REPO`. `tui <label>` and `issues <label>` override
-`GSADV_LABEL`. An unset or empty `GSADV_LABEL` defaults to `cve`. Quote labels containing spaces.
+`GSADV_LABEL`. An unset label defaults to `cve`; an empty `GSADV_LABEL` or `--label ''`
+removes the label filter. Quote labels containing spaces. The separate
+`GSADV_ADVISORY_LABEL` continues to scope GitLab disclosures and does not disable with an empty value.
 
 When no repository/source URL is supplied and `GSADV_HOST` is unset, `GH_HOST` supplies
 the GitHub host; with `--provider gitlab`, `GITLAB_HOST` supplies the GitLab host.

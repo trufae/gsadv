@@ -60,10 +60,12 @@ fn (api Repository) source(input string) !Source {
 		provider: api.provider, host: api.host}
 }
 
-// tagged fix commits in the cwd checkout: sha, date, subject
+// Matching commits in the cwd checkout: sha, date, subject.
 fn commits() ![][]string {
 	grep := setting('GREP') or { '##(crash|security|vulnerability|sandbox)' }
-	r := os.exec(['git', 'log', '-E', '--grep=${grep}', '-n', '2000', '--format=%H%x09%as%x09%s'])
+	mut args := ['git', 'log', '-n', '2000', '--format=%H%x09%as%x09%s']
+	if grep != '' { args << ['-E', '--grep=${grep}'] }
+	r := os.exec(args)
 	if r.exit_code != 0 {
 		return error(r.output.trim_space())
 	}

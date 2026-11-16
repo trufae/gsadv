@@ -226,7 +226,8 @@ fn input_line(prompt string, text string, width int) string {
 
 const tui_help = 'tab/shift-tab: next/previous view (advisories/commits/issues)
 j/k or mouse wheel: move; J/K: move ten rows
-enter: view advisory/commit/issue/PR; e: edit; r: AI review; n: new draft
+enter: view advisory/commit/issue/PR; e: edit advisory; r: AI review selected item; n: new draft
+M: edit and post a discussion comment on the selected issue/PR/MR
 b: find similar bugs using the selected advisory or source as a template
 C: manage advisory credits (finder, reporter, fix developer and other roles)
 c (or a): request CVE; d: accept/reopen as draft; p: publish; x: close
@@ -446,8 +447,18 @@ fn run(k string, api Repository, id string, input string) ! {
 		'C' {
 			credits_tui(api, id)!
 		}
-		'e', 'r' {
+		'e' {
 			advisory_tui(api, id, k)!
+		}
+		'r' {
+			if input == '' { advisory_tui(api, id, k)!; return }
+			ctx := action_input('Review source with AI. Extra context (optional; Esc cancels): ') or { return }
+			tui_workflow(api, 'review', input, ctx)!
+			action_input('Press Enter to return (Ctrl+C/Esc also returns): ') or {}
+		}
+		'M' {
+			tui_workflow(api, 'comment', input)!
+			action_input('Press Enter to return (Ctrl+C/Esc also returns): ') or {}
 		}
 		'b' {
 			if input == '' {
@@ -816,7 +827,7 @@ fn tui(initial_api Repository, label string) {
 	mut lists := []TuiList{len: 3}
 	mut changed := [true, true, true]
 	mut links := AdvisoryLinks{}
-	mut view := 0 // 0 advisories, 1 git, 2 labeled issues/PRs
+	mut view := 0 // 0 advisories, 1 git, 2 issues/PRs
 	mut sel := [0, 0, 0]
 	mut top := [0, 0, 0]
 	mut status := ''
@@ -947,7 +958,7 @@ fn tui(initial_api Repository, label string) {
 		records_title := if api.provider == 'gitlab' { 'disclosures' } else { 'advisories' }
 		sources_title := if api.provider == 'gitlab' { 'issues/MRs' } else { 'issues/PRs' }
 		mut tabs := ['${records_title} ${visible[0].len} (${filters[filter]})', 'commits ${visible[1].len}',
-			'${sources_title} ${visible[2].len} (${label})']
+			'${sources_title} ${visible[2].len} (${if label == '' { 'all labels' } else { label }})']
 		repo_pending := loader.pending[int(TuiLoadKind.repository)]
 		for v in 0 .. tabs.len {
 			if !loaded[v] { tabs[v] += if v != 1 && api.repo == '' && !repo_pending { ' unavailable' } else { ' loading...' } }
@@ -1010,7 +1021,7 @@ fn tui(initial_api Repository, label string) {
 		screen.draw(list_frame(layout, headers, body, [filter_hint,
 			key_hints(['m actions', 'i invalid', 'I unmark', 'b similar bugs', ...credit_hint, 's status', ...actions, 'g reload', 'A agent'], width),
 			key_hints(['? help', 'q quit', 'tab/shift-tab views', '/ text', 'f/F state', 'j/k/J/K move',
-			'enter view', 'e edit', 'r review', 'n new'], width)]), w, h)
+			'enter view', 'e edit', 'r review', 'M comment', 'n new'], width)]), w, h)
 		mut k := ''
 		for {
 			if loader.results.len > 0 || action_results.len > 0 { break }
@@ -1030,16 +1041,17 @@ fn tui(initial_api Repository, label string) {
 			advisory_menu := if id == '' { '' } else {
 				actions.join('\n') + '\ns status details\nv view advisory\ne edit advisory\nr AI review\n' + if api.provider == 'github' { 'C manage credits\n' } else { '' }
 			}
+			source_menu := if input == '' { '' } else { 'r AI review selected source\n' + if view == 2 { 'M post discussion comment\n' } else { '' } }
 			k = tui_dialog('Actions for ${target}\n${hint}\n\n${advisory_menu}' +
-				'i mark invalid locally / edit reason\nI remove local invalid tag\nb Find similar bugs\n\nChoose a key; Enter/Esc cancels.')
+				source_menu + 'i mark invalid locally / edit reason\nI remove local invalid tag\nb Find similar bugs\n\nChoose a key; Enter/Esc cancels.')
 			if k == 'v' {
 				k = '\n'
 				show_input = ''
-			} else if k !in ['s', 'e', 'r', 'b', 'C', 'i', 'I'] && !actions.any(it.starts_with(k + ' ')) {
+			} else if k !in ['s', 'e', 'r', 'b', 'C', 'M', 'i', 'I'] && !actions.any(it.starts_with(k + ' ')) {
 				continue
 			}
 		}
-		if pending_action != '' && k in ['q', '\x03', 'a', 'c', 'd', 'p', 'x', 'e', 'r', 'n', 'C', 'b', '\n', '\r'] {
+		if pending_action != '' && k in ['q', '\x03', 'a', 'c', 'd', 'p', 'x', 'e', 'r', 'n', 'C', 'M', 'b', '\n', '\r'] {
 			continue
 		}
 		match k {
@@ -1127,12 +1139,13 @@ fn tui(initial_api Repository, label string) {
 				}
 				changed = [true, true, true]
 			}
-			'\n', '\r', 'e', 'r', 'b', 'n', 's', 'C', '?' {
+			'\n', '\r', 'e', 'r', 'b', 'n', 's', 'C', 'M', '?' {
 				if api.repo == '' && k != '?' && !(view == 1 && k in ['\n', '\r']) {
 					status = 'Repository unavailable; wait for loading or press g to retry'
 					continue
 				}
-				if id == '' && (k in ['e', 'r', 's', 'C'] || (k in ['\n', '\r', 'b'] && input == '')) {
+				if k == 'M' && view != 2 { status = 'select an issue/PR/MR to comment'; continue }
+				if id == '' && (k in ['e', 's', 'C'] || (k in ['\n', '\r', 'b', 'r', 'M'] && input == '')) {
 					status = 'no advisory selected; press n to create a draft'
 					continue
 				}
@@ -1150,7 +1163,7 @@ fn tui(initial_api Repository, label string) {
 					continue
 				}
 				cooked()
-				run(k, api, id, if k in ['e', 'r', 's', 'C'] { '' } else { show_input }) or {
+				run(k, api, id, if k in ['e', 's', 'C'] { '' } else { show_input }) or {
 					if err.code() == 130 {
 						status = err.msg()
 					} else {

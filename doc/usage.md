@@ -5,7 +5,7 @@ advisories; GitLab uses labeled disclosure issues. See [GitLab support](gitlab.m
 its workflow and platform differences. `<id>` means `GHSA-…` on GitHub or `GL-123` on GitLab.
 
 ```
-gsadv [-r namespace/repo|url] [--provider github|gitlab] [--host hostname] [--remote name] [command] [args]
+gsadv [-r namespace/repo|url] [--provider github|gitlab] [--host hostname] [--remote name] [--label label] [--grep regex] [command] [args]
   --version, -v, version   print the tool version
   tui [label]              advisory, commit and labeled issues/PRs tabs (default)
   ls [state]               GitHub advisories or GitLab disclosure issues (opened/closed)
@@ -16,7 +16,8 @@ gsadv [-r namespace/repo|url] [--provider github|gitlab] [--host hostname] [--re
   status <id>             show lifecycle, CVE and private report details
   credits <id>            manage credited people and roles in the TUI
   edit <id>               edit advisory in $EDITOR
-  review <id> [context]   let the AI review/rewrite it, then edit
+  review <id|commit|url> [context] AI review an advisory or source, then edit
+  comment <issue|PR URL> [text] edit and confirm a discussion comment
   similar <id|commit|url> [context] find similar bugs using the selection as a template
   resume <directory>       continue saved work without running the AI again
   recover <log|directory>  render a saved claude.jsonl as Markdown (partial replies)
@@ -90,6 +91,8 @@ On GitHub, an optional state filters the results: `gsadv ls triage`, `gsadv ls d
 
 Lists local commits matching `GSADV_GREP` and the advisory that references each of them.
 By default, it matches `##crash`, `##security`, `##vulnerability` and `##sandbox` tags.
+Override with `--grep 'fix|bug'`, `GSADV_GREP`, or `git config --local gsadv.grep 'fix|bug'`.
+`--grep ''` disables the pattern and lists the latest 2000 local commits.
 This is how you spot fixes that nobody reported yet:
 
 ```
@@ -121,8 +124,9 @@ gsadv -r owner/repo issues "needs-cve"
 gsadv -r owner/repo tui "needs-cve"
 ```
 
-Both commands accept an optional label, defaulting to `GSADV_LABEL` or `cve` when unset
-or empty. The TUI always includes the third issues/PRs or issues/MRs tab. Items are fetched across
+Both commands accept an optional label, defaulting to `GSADV_LABEL`, `git config gsadv.label`
+or `cve`. Use `--label ''` or an empty `GSADV_LABEL` to include unlabelled items.
+The TUI always includes the third issues/PRs or issues/MRs tab. Items are fetched across
 all pages and states, including closed issues and merged PRs/MRs. The list shows any advisory
 referencing each item's URL. Press `n` in that tab to draft from the selected item.
 The label is not removed after draft creation or CVE requests.
@@ -137,6 +141,20 @@ GitHub `PATCH` or GitLab issue `PUT` on save, followed by reloading and checking
 `gsadv review <id> [context]` asks the agent to critique and rewrite the advisory, then
 opens a diff for you to accept or reject line by line. See [the advisory](advisory-format.md)
 for the diff rules.
+
+`gsadv review <commit|URL> [context]` instead reviews the source's diff and discussion
+and opens a Markdown report in `$EDITOR`. PR/MR and issue reports can be posted as discussion
+comments after a preview and `[y/N]` confirmation; commit reports remain local. No label or
+linked advisory is required. These are discussion comments, not approvals, merge actions or
+inline review threads. Empty the editor buffer to cancel. Recovery files keep the source,
+prompt, AI reply, edited comment and a posting receipt; `resume` reopens saved work without AI
+and prevents posting a saved comment twice after a successful recorded post.
+
+### comment
+
+`gsadv comment <issue|PR/MR URL> [text]` opens `$EDITOR` with optional initial text, previews
+the result and asks before posting. It uses the same saved-text and resume workflow as source
+reviews, without running an AI agent. Press `M` on an issue/PR/MR in the TUI for this action.
 
 ### similar
 

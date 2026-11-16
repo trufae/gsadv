@@ -23,7 +23,7 @@ Views, switched forward with `tab` and backward with `shift-tab`:
 | View | Shows |
 | --- | --- |
 | advisories | GHSA id, state, CVE id, severity, summary |
-| commits | tagged fix commits (`GSADV_GREP`), date, subject, and the advisory referencing them |
+| commits | commits matching `GSADV_GREP` (empty: all of the latest 2000), date, subject, and linked advisory |
 | issues/PRs | items with `GSADV_LABEL` (default `cve`, or `gsadv tui <label>`), number, type, state, linked advisory and title |
 
 The issues/PRs tab is always available and shows its label in the header. It includes every state, so
@@ -50,7 +50,8 @@ Keys:
 | `enter` | show the commit (`git show`), advisory or issue/PR discussion (`r2` Markdown rendering if available, otherwise `$PAGER`) |
 | `n` | draft from the selected commit or issue/PR; in the advisory view, prompt for a commit or URL and optional context |
 | `e` | edit the linked advisory |
-| `r` | AI-review the linked advisory |
+| `r` | AI-review the selected advisory or source, including sources without a linked advisory |
+| `M` | compose a discussion comment on the selected issue/PR/MR, then confirm posting |
 | `b` | find similar bugs using the selected advisory or source as a template |
 | `C` | manage credited people and roles for the linked advisory |
 | `m` | open the selected item's actions menu, including linked advisory actions |
@@ -83,7 +84,11 @@ result appears in the status line and triggers a fresh advisory reload.
 In the commit and issues/PRs views, advisory actions act on the advisory that references
 the selected item. If there is none, press `n` to prepare a draft, review it in `$EDITOR`,
 then `c` to request a CVE. Issue/PR links require their full URL in the advisory description.
-Creating a draft does not request a CVE, publish, or remove the label.
+Creating a draft does not request a CVE, publish, or remove the label. Source reviews (`r`)
+and comments (`M`) work independently of linked advisories. Source reviews open as Markdown
+in `$EDITOR`; posting to an issue/PR/MR requires confirming the preview. Commit reviews
+stay local. Use `--label ''` to include unlabelled items and `--grep ''` for all commits,
+or save those defaults with `git config --local gsadv.label ''` and `gsadv.grep ''`.
 
 Local invalid tags apply only to the selected item. Press `i`, enter a reason such as
 "No tagged release shipped vulnerable code", and press Enter to save; Escape or Ctrl+C
