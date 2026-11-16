@@ -115,7 +115,10 @@ def stub():
                   web_url=f'https://{host}/group/sub/repo/-/merge_requests/42',
                   author={'username': 'alice'}, merge_commit_sha='a'*40,
                   source_branch='fix', target_branch='main')
-        result = [mr] if endpoint == 'merge_requests' else mr
+        if endpoint == 'merge_requests':
+            result = [mr] if 'labels' not in query or query['labels'][0] == 'cve' else []
+        else:
+            result = mr
     elif endpoint.endswith('/notes'):
         result = [dict(id=1, body='Reproduction evidence', author={'username': 'alice'}),
                   dict(id=2, body='Follow-up evidence', author={'username': 'bob'})]
@@ -395,6 +398,32 @@ def tui_smoke(binary, root, env):
         os.write(master, b'\x1b[Z')
         mrs = until('[MRs ')
         assert '/Fix parser' in mrs
+        os.write(master, b'\x1b[Z')
+        issues = until('[issues ')
+        assert 'Reviewed report' in issues and 'Fix parser' not in issues
+        os.write(master, b'l')
+        until('Label: cve')
+        os.write(master, b'\x15custom label\r')
+        empty = until('No entries. Press l')
+        assert 'label: custom label' in empty
+        calls = [json.loads(line) for line in (root / 'calls').read_text().splitlines()]
+        assert all('labels=custom+label' in c['path'] for c in calls[-2:])
+        os.write(master, b'\t')
+        until('[MRs 0')
+        os.write(master, b'l')
+        until('Label: custom label')
+        os.write(master, b'\x15\r')
+        mrs = until('[MRs 1')
+        assert 'all labels' in mrs and '/Fix parser' in mrs
+        calls = [json.loads(line) for line in (root / 'calls').read_text().splitlines()]
+        assert all('labels=' not in c['path'] for c in calls[-2:])
+        count = len(calls)
+        os.write(master, b'l')
+        until('Label: ')
+        os.write(master, b'cancelled\x1b')
+        mrs = until('[MRs ')
+        assert 'all labels' in mrs and '/Fix parser' in mrs
+        assert len((root / 'calls').read_text().splitlines()) == count
         os.write(master, b'\x1b[Z')
         issues = until('[issues ')
         assert 'Reviewed report' in issues and 'Fix parser' not in issues

@@ -29,7 +29,10 @@ Views, switched forward with `tab` and backward with `shift-tab`:
 
 The issues and PRs/MRs tabs keep their own search, selection and scroll position. Both show
 `label: cve` (or the configured label) in the header; `--label ''` shows `all labels` and
-includes unlabelled items. Both include every state, so
+includes unlabelled items. Press `l` from any tab to edit this shared label filter for
+the current session. Enter applies and reloads both tabs; Ctrl+U then Enter clears the
+filter to include all labels; Escape or Ctrl+C cancels. Changing the label resets both
+tabs to their first row and preserves their text searches. Both include every state, so
 closed issues and merged PRs remain available for reporting. `closed` in this list can
 mean either a merged or a closed, unmerged PR; `enter` shows its merge metadata.
 
@@ -67,6 +70,7 @@ Keys:
 | `s` | show lifecycle, CVE, private-report status, timestamps and URL |
 | `f` / `F` | cycle all / triage / draft / published / closed forward / backward, wrapping at either end |
 | `/` | enter a case-insensitive text filter for the current list; empty input clears it |
+| `l` | change the shared issues/PRs/MRs label filter for this session; empty input shows all labels |
 | `A` | cycle the AI agent preset |
 | `g` | reload all lists and local Git status |
 | `?` | show all keys and the active AI agent |

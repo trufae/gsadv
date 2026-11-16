@@ -103,7 +103,8 @@ gsadv [-r namespace/repo|url] [--provider github|gitlab] [--host hostname] [--re
 Run `gsadv` with no arguments for the TUI: advisories/disclosures, commits, issues,
 and PRs (MRs on GitLab) each have their own tab. Searches, selections and scrolling
 are independent. The issue and PR/MR headers show `label: cve` by default, or
-`all labels` with `--label ''`.
+`all labels` with `--label ''`. Press `l` to change the shared label filter for the
+current TUI session. Enter applies; Ctrl+U then Enter shows all labels; Escape cancels.
 The screen opens immediately while repository detection, remote lists and local Git
 details load in background threads. Each tab becomes usable as its data arrives;
 navigation and quitting stay responsive during loading and reloads. Reload failures

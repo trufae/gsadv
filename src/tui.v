@@ -234,6 +234,7 @@ c (or a): request CVE; d: accept/reopen as draft; p: publish; x: close
 i: tag the selected item invalid locally (with a reason); I: remove the tag
 s: advisory status; m: actions menu; f/F: next/previous advisory state filter
 /: filter the current list by text (Enter applies; empty clears; Esc cancels)
+l: change the shared issues/PRs/MRs label filter (empty shows all labels)
 g: reload; A: cycle AI agent
 ?: this help; q or Ctrl+C: quit
 
@@ -803,8 +804,9 @@ fn credits_tui(api Repository, id string) ! {
 	}
 }
 
-fn tui(initial_api Repository, label string) {
+fn tui(initial_api Repository, initial_label string) {
 	mut api := initial_api
+	mut label := initial_label
 	saved := os.exec(['stty', '-g']).output.trim_space()
 	raw := fn () {
 		os.system_args(['stty', '-icanon', '-echo', '-isig', 'min', '0', 'time', '1'])
@@ -996,6 +998,8 @@ fn tui(initial_api Repository, label string) {
 				'No matches. Press / to change or clear the text filter.'
 			} else if view == 0 {
 				'No entries. Press f/F to change the filter or g to reload.'
+			} else if view >= 2 {
+				'No entries. Press l to change the label filter or g to reload.'
 			} else {
 				'No entries. Press g to reload or n to enter a commit/URL.'
 			})
@@ -1024,7 +1028,7 @@ fn tui(initial_api Repository, label string) {
 		credit_hint := if api.provider == 'github' { ['C credits'] } else { []string{} }
 		screen.draw(list_frame(layout, headers, body, [filter_hint,
 			key_hints(['m actions', 'i invalid', 'I unmark', 'b similar bugs', ...credit_hint, 's status', ...actions, 'g reload', 'A agent'], width),
-			key_hints(['? help', 'q quit', 'tab/shift-tab views', '/ text', 'f/F state', 'j/k/J/K move',
+			key_hints(['? help', 'q quit', 'tab/shift-tab views', '/ text', 'l label', 'f/F state', 'j/k/J/K move',
 			'enter view', 'e edit', 'r review', 'M comment', 'n new'], width)]), w, h)
 		mut k := ''
 		for {
@@ -1102,6 +1106,22 @@ fn tui(initial_api Repository, label string) {
 					'Filter text: ', '', false) {
 					queries[view] = query.trim_space()
 					sel[view], top[view] = 0, 0
+				}
+			}
+			'l' {
+				screen.width = 0
+				if text := tui_input('Label filter for issues and PRs/MRs. Enter applies; empty shows all labels; Esc cancels.',
+					'Label: ', label, false) {
+					next_label := text.trim_space()
+					if next_label == label { continue }
+					label = next_label
+					// Old rows belong to the previous label, including while reloading.
+					items, prs = [][]string{}, [][]string{}
+					for v in [2, 3] {
+						loaded[v], changed[v] = false, true
+						sel[v], top[v] = 0, 0
+					}
+					if api.repo != '' { loader.request(api, label, .issues, true) }
 				}
 			}
 			'A' {
