@@ -15,7 +15,7 @@ fn invalid_key(input string) string {
 }
 
 fn invalid_target(repo string, input string) !string {
-	return Repository{repo: repo}.invalid_target(input)
+	return Repository(GitHub{repo: repo}).invalid_target(input)
 }
 
 fn (api Repository) invalid_target(input string) !string {

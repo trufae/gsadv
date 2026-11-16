@@ -5,10 +5,22 @@ import net.urllib
 import crypto.sha256
 
 // Keep the host with the project: identical paths can exist on different forges.
-struct Repository {
+interface Repository {
 	repo string
-	provider string = 'github'
-	host string = 'github.com'
+	provider string
+	host string
+	list_advisories(state string) ![][]string
+	releases() !map[string]string
+	advisory(id string) !string
+	status(id string) !string
+	issues(label string) ![][]string
+	source_text(s Source, with_patch bool) !string
+	create_advisory(a Adv) !string
+	write_advisory(id string, a Adv) !
+	set_state(id string, state string) !
+	request_cve(id string) !string
+	credits(id string) ![]Credit
+	update_credits(id string, credits []Credit) !
 }
 
 fn (api Repository) url() string {
@@ -68,7 +80,8 @@ fn repository_location(input string, provider string, host string) !Repository {
 			return error('invalid repository path')
 		}
 	}
-	return Repository{repo: name, provider: forge, host: server}
+	if forge == 'gitlab' { return GitLab{repo: name, host: server} }
+	return GitHub{repo: name, host: server}
 }
 
 // Choose a remote deterministically; never infer a forge from an auth failure.
@@ -118,7 +131,8 @@ fn configured_repository(input string) !Repository {
 			selected := repository_location(repo, s.provider, s.host)!
 			if selected.repo.to_lower() != s.repo.to_lower() { return error('source URL does not match selected repository') }
 		}
-		return Repository{repo: s.repo, host: s.host, provider: s.provider}
+		if s.provider == 'gitlab' { return GitLab{repo: s.repo, host: s.host} }
+		return GitHub{repo: s.repo, host: s.host}
 	}
 	return resolve_repository(repo, provider, host, setting('REMOTE') or { '' })
 }

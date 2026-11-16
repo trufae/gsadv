@@ -48,7 +48,7 @@ fn test_saved_ai_reply() ! {
 }
 
 fn test_recovery_sessions_do_not_overwrite_previous_work() ! {
-	api := Repository{ repo: 'owner/repo' }
+	api := Repository(GitHub{ repo: 'owner/repo' })
 	a := start_edit(api, 'GHSA-test', 'review', 'original', 'prompt')!
 	b := start_edit(api, 'GHSA-test', 'review', 'other original', 'other prompt')!
 	defer {
@@ -62,7 +62,7 @@ fn test_recovery_sessions_do_not_overwrite_previous_work() ! {
 }
 
 fn test_claude_progress_keeps_text_separate_from_events() ! {
-	dir := start_edit(Repository{repo: 'owner/repo'}, 'GHSA-test', 'review', '', '')!
+	dir := start_edit(GitHub{repo: 'owner/repo'}, 'GHSA-test', 'review', '', '')!
 	defer { os.rmdir_all(dir) or {} }
 	path := os.join_path(dir, 'reply.txt')
 	os.write_file(path, '')!
@@ -84,7 +84,7 @@ fn test_claude_progress_keeps_text_separate_from_events() ! {
 }
 
 fn test_claude_errors_retain_partial_reply() ! {
-	dir := start_edit(Repository{repo: 'owner/repo'}, 'GHSA-test', 'review', '', '')!
+	dir := start_edit(GitHub{repo: 'owner/repo'}, 'GHSA-test', 'review', '', '')!
 	defer { os.rmdir_all(dir) or {} }
 	path := os.join_path(dir, 'reply.txt')
 	os.write_file(path, 'partial review')!
@@ -114,7 +114,7 @@ fn test_claude_tool_progress_quotes_controls_and_bounds_unicode() ! {
 }
 
 fn test_recovered_transcript_keeps_partial_text() ! {
-	dir := start_edit(Repository{repo: 'owner/repo'}, 'GHSA-test', 'review', '', '')!
+	dir := start_edit(GitHub{repo: 'owner/repo'}, 'GHSA-test', 'review', '', '')!
 	defer { os.rmdir_all(dir) or {} }
 	log := os.join_path(dir, 'claude.jsonl')
 	quota := "You've hit your individual spend limit"
@@ -147,7 +147,7 @@ fn test_recovered_transcript_keeps_partial_text() ! {
 }
 
 fn test_recovered_last_run_without_failure_is_not_a_stop() ! {
-	dir := start_edit(Repository{repo: 'owner/repo'}, 'GHSA-test', 'review', '', '')!
+	dir := start_edit(GitHub{repo: 'owner/repo'}, 'GHSA-test', 'review', '', '')!
 	defer { os.rmdir_all(dir) or {} }
 	log := os.join_path(dir, 'claude.jsonl')
 	lines := [
@@ -166,7 +166,7 @@ fn test_recovered_last_run_without_failure_is_not_a_stop() ! {
 }
 
 fn test_recovered_transcript_survives_damaged_log() ! {
-	dir := start_edit(Repository{repo: 'owner/repo'}, 'GHSA-test', 'review', '', '')!
+	dir := start_edit(GitHub{repo: 'owner/repo'}, 'GHSA-test', 'review', '', '')!
 	defer { os.rmdir_all(dir) or {} }
 	log := os.join_path(dir, 'claude.jsonl')
 	os.write_file(log, '{"type":"assistant","message":{"content":[{"type":"text","text":"kept"}]}}\n{"type":\n')!
@@ -179,7 +179,7 @@ fn test_recovered_transcript_survives_damaged_log() ! {
 }
 
 fn test_cli_accepts_recovery_directory() ! {
-	dir := start_edit(Repository{repo: 'owner/repo'}, 'GHSA-test', 'review', '', '')!
+	dir := start_edit(GitHub{repo: 'owner/repo'}, 'GHSA-test', 'review', '', '')!
 	defer { os.rmdir_all(dir) or {} }
 	os.write_file(os.join_path(dir, 'claude.jsonl'), '{"type":"assistant","message":{"content":[{"type":"text","text":"partial"}]}}\n')!
 	out := os.join_path(dir, 'out.md')

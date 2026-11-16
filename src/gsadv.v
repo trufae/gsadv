@@ -96,7 +96,7 @@ fn main() {
 		return
 	}
 	if cmd == 'tui' {
-		tui(Repository{}, issue_label(id))
+		tui(GitHub{}, issue_label(id))
 		return
 	}
 	input := if cmd in ['new', 'similar', 'invalid', 'unmark'] { id } else { '' }

@@ -17,7 +17,7 @@ fn source(repo string, input string) !Source {
 	if repo == '' && input.contains('://') {
 		return source_url(input, 'github', 'github.com')
 	}
-	return Repository{repo: repo}.source(input)
+	return Repository(GitHub{repo: repo}).source(input)
 }
 
 fn source_url(input string, provider string, host string) !Source {

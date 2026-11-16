@@ -15,7 +15,7 @@ struct TuiLoad {
 	rows [][]string
 	text string
 	error string
-	repository Repository
+	repository Repository = GitHub{}
 }
 
 // Workers own their results; only the input loop changes the displayed snapshot.
@@ -26,7 +26,7 @@ fn tui_load(api Repository, label string, kind TuiLoadKind, results chan TuiLoad
 	mut repository := api
 	match kind {
 		.repository {
-			repository = configured_repository('') or { failure = err.msg(); Repository{} }
+			repository = configured_repository('') or { failure = err.msg(); GitHub{} }
 			text = repository.repo
 			if text == '' && failure == '' { failure = 'cannot find repository' }
 		}

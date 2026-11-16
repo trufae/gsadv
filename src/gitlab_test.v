@@ -29,7 +29,7 @@ fn test_gitlab_payload_confidentiality_and_supported_actions() ! {
 	assert payload.contains('"confidential":true')
 	edit := json2.encode(GitLabEdit{'Title', 'Body'})
 	assert !edit.contains('confidential') && !edit.contains('labels') && !edit.contains('state')
-	api := Repository{repo: 'group/repo', provider: 'gitlab', host: 'gitlab.com'}
+	api := Repository(GitLab{repo: 'group/repo', host: 'gitlab.com'})
 	assert api.states() == ['all', 'opened', 'closed']
 	assert api.actions(['GL-1', 'opened', '-', '', 'Title']) == ['c CVE request instructions', 'x close issue']
 	assert api.actions(['GL-1', 'closed', '-', '', 'Title']) == ['c CVE request instructions', 'd reopen issue']
@@ -41,12 +41,12 @@ fn test_gitlab_payload_confidentiality_and_supported_actions() ! {
 	for state in ['draft', 'published'] {
 		if _ := api.set_state('GL-1', state) { assert false, 'unsupported transition reached API' }
 	}
-	assert api.gitlab_project() == 'projects/group%2Frepo'
-	assert Repository{repo: 'group/sub/repo', provider: 'gitlab'}.gitlab_project() == 'projects/group%2Fsub%2Frepo'
+	assert GitLab{repo: api.repo}.project() == 'projects/group%2Frepo'
+	assert GitLab{repo: 'group/sub/repo'}.project() == 'projects/group%2Fsub%2Frepo'
 }
 
 fn test_provider_identity_in_saved_sessions_and_local_tags() ! {
-	api := Repository{repo: 'group/sub/repo', provider: 'gitlab', host: 'code.example'}
+	api := Repository(GitLab{repo: 'group/sub/repo', host: 'code.example'})
 	dir := start_edit(api, 'GL-7', 'review', 'original', 'prompt')!
 	defer { os.rmdir_all(dir) or {} }
 	session := json2.decode[EditSession](os.read_file(os.join_path(dir, 'session.json'))!)!
@@ -55,7 +55,7 @@ fn test_provider_identity_in_saved_sessions_and_local_tags() ! {
 	old := json2.decode[EditSession]('{"repo":"owner/repo","id":"GHSA-test","kind":"edit"}')!
 	assert old.provider == 'github'
 	assert api.invalid_target('GL-7')! == api.invalid_target('https://code.example/group/sub/repo/-/issues/7')!
-	assert api.state_path('invalid', '') != Repository{repo: api.repo, host: api.host}.state_path('invalid', '')
-	github := Repository{repo: 'owner/repo'}
+	assert api.state_path('invalid', '') != Repository(GitHub{repo: api.repo, host: api.host}).state_path('invalid', '')
+	github := Repository(GitHub{repo: 'owner/repo'})
 	assert os.file_name(github.state_path('cve-requests', 'GHSA-test')) == sha256.hexhash('github.com\nowner/repo\nghsa-test')
 }

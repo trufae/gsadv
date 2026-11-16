@@ -6,7 +6,7 @@ fn test_repository_urls_and_provider_validation() ! {
 	for url in ['https://gitlab.com/group/sub/project.git', 'git@gitlab.com:group/sub/project.git',
 		'ssh://git@gitlab.com:2222/group/sub/project.git'] {
 		api := repository_location(url, '', '')!
-		assert api == Repository{repo: 'group/sub/project', provider: 'gitlab', host: 'gitlab.com'}
+		assert api == Repository(GitLab{repo: 'group/sub/project', host: 'gitlab.com'})
 	}
 	assert repository_location('owner/repo', '', '')!.provider == 'github'
 	assert repository_location('git@code.example:group/sub/project.git', 'gitlab', '')!.host == 'code.example'
@@ -22,7 +22,7 @@ fn test_repository_urls_and_provider_validation() ! {
 }
 
 fn test_gitlab_sources_support_subgroups_and_preserve_identity() ! {
-	api := Repository{repo: 'group/sub/repo', provider: 'gitlab', host: 'code.example'}
+	api := Repository(GitLab{repo: 'group/sub/repo', host: 'code.example'})
 	for kind in ['issues', 'merge_requests', 'commit'] {
 		ref := if kind == 'commit' { 'abcd1234' } else { '42' }
 		url := '${api.url()}/-/${kind}/${ref}'

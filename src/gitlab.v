@@ -6,6 +6,20 @@ import net.urllib
 import regex
 import time
 
+struct GitLab {
+	repo string
+	provider string = 'gitlab'
+	host string = 'gitlab.com'
+}
+
+fn (api GitLab) credits(_ string) ![]Credit {
+	return error('GitLab has no structured advisory credits; use edit to maintain attribution in the report')
+}
+
+fn (api GitLab) update_credits(_ string, _ []Credit) ! {
+	return error('GitLab has no structured advisory credits; use edit')
+}
+
 // Keep the serialized marker compatible with existing disclosure issues.
 const gitlab_advisory_marker = '<!-- ghadv:advisory -->\n```text\n'
 
@@ -58,9 +72,9 @@ struct GitLabRelease {
 	upcoming_release bool
 }
 
-fn (api Repository) gitlab_releases() !map[string]string {
+fn (api GitLab) releases() !map[string]string {
 	mut releases := map[string]string{}
-	for release in api.gitlab_list[GitLabRelease]('${api.gitlab_project()}/releases?per_page=100')! {
+	for release in api.list[GitLabRelease]('${api.project()}/releases?per_page=100')! {
 		releases[release.tag_name] = gitlab_release_state(release, time.utc())
 	}
 	return releases
@@ -89,25 +103,25 @@ fn gitlab_advisory_label() string {
 	return if label != '' { label } else { 'security-advisory' }
 }
 
-fn (api Repository) gitlab_project() string {
+fn (api GitLab) project() string {
 	return 'projects/' + urllib.path_escape(api.repo)
 }
 
-fn (api Repository) gitlab_request(args ...string) !string {
+fn (api GitLab) request(args ...string) !string {
 	r := os.exec(['glab', 'api', '--hostname', api.host, ...args])
 	if r.exit_code != 0 { return error(r.output.trim_space()) }
 	return r.output
 }
 
-fn (api Repository) gitlab_send(method string, path string, payload string) !string {
+fn (api GitLab) send(method string, path string, payload string) !string {
 	file := os.join_path(os.temp_dir(), 'gsadv-gitlab-${os.getpid()}.json')
 	os.write_file(file, payload)!
 	defer { os.rm(file) or {} }
-	return api.gitlab_request('--method', method, path, '--input', file)
+	return api.request('--method', method, path, '--input', file)
 }
 
-fn (api Repository) gitlab_list[T](path string) ![]T {
-	out := api.gitlab_request(path, '--paginate', '--output', 'ndjson')!
+fn (api GitLab) list[T](path string) ![]T {
+	out := api.request(path, '--paginate', '--output', 'ndjson')!
 	mut items := []T{}
 	for line in out.split_into_lines().filter(it.trim_space() != '') {
 		items << json2.decode[T](line)!
@@ -123,9 +137,9 @@ fn gitlab_iid(id string) !string {
 	return number
 }
 
-fn (api Repository) gitlab_issue(id string) !GitLabIssue {
+fn (api GitLab) issue(id string) !GitLabIssue {
 	iid := gitlab_iid(id)!
-	issue := json2.decode[GitLabIssue](api.gitlab_request('${api.gitlab_project()}/issues/${iid}')!)!
+	issue := json2.decode[GitLabIssue](api.request('${api.project()}/issues/${iid}')!)!
 	if issue.iid == 0 { return error('GitLab returned an issue without an IID') }
 	return issue
 }
@@ -171,15 +185,15 @@ fn gitlab_description(a Adv) string {
 	return gitlab_advisory_marker + text.all_before('\n---\n') + '\n```\n\n' + a.description
 }
 
-fn (api Repository) gitlab_advisory(id string) !string {
-	issue := api.gitlab_issue(id)!
+fn (api GitLab) advisory(id string) !string {
+	issue := api.issue(id)!
 	visibility := if issue.confidential { 'confidential' } else { 'public' }
 	return '# GL-${issue.iid} ${issue.state} ${visibility} ${gitlab_cves(issue)} ${issue.web_url}\n' + advisory_text(gitlab_issue_advisory(issue)!)
 }
 
-fn (api Repository) gitlab_advisories(state string) ![][]string {
+fn (api GitLab) list_advisories(state string) ![][]string {
 	filter := if state in ['', 'all'] { 'all' } else { state }
-	items := api.gitlab_list[GitLabIssue]('${api.gitlab_project()}/issues?scope=all&state=${filter}&per_page=100&labels=${urllib.query_escape(gitlab_advisory_label())}')!
+	items := api.list[GitLabIssue]('${api.project()}/issues?scope=all&state=${filter}&per_page=100&labels=${urllib.query_escape(gitlab_advisory_label())}')!
 	mut rows := [][]string{}
 	for item in items {
 		a := gitlab_issue_advisory(item)!
@@ -187,7 +201,7 @@ fn (api Repository) gitlab_advisories(state string) ![][]string {
 		for token in item.description.fields() {
 			if at := token.index('https://') {
 				url := token[at..].trim_right(').,;]>"')
-				if s := api.source(url) { urls << s.url }
+				if s := Repository(api).source(url) { urls << s.url }
 			}
 		}
 		rows << ['GL-${item.iid}', item.state, gitlab_cves(item), a.severity, item.title,
@@ -199,11 +213,11 @@ fn (api Repository) gitlab_advisories(state string) ![][]string {
 	return rows
 }
 
-fn (api Repository) gitlab_issues(label string) ![][]string {
+fn (api GitLab) issues(label string) ![][]string {
 	if label == '' { return [][]string{} }
 	mut rows := [][]string{}
 	for kind in ['issues', 'merge_requests'] {
-		for item in api.gitlab_list[GitLabIssue]('${api.gitlab_project()}/${kind}?scope=all&state=all&per_page=100&labels=${urllib.query_escape(label)}')! {
+		for item in api.list[GitLabIssue]('${api.project()}/${kind}?scope=all&state=all&per_page=100&labels=${urllib.query_escape(label)}')! {
 			rows << [item.web_url, item.iid.str(), if kind == 'issues' { 'issue' } else { 'MR' },
 				item.state, item.title]
 		}
@@ -211,36 +225,36 @@ fn (api Repository) gitlab_issues(label string) ![][]string {
 	return rows
 }
 
-fn (api Repository) gitlab_status(id string) !string {
-	issue := api.gitlab_issue(id)!
+fn (api GitLab) status(id string) !string {
+	issue := api.issue(id)!
 	return 'disclosure: GL-${issue.iid}\nstate: ${issue.state}\nvisibility: ' +
 		if issue.confidential { 'confidential' } else { 'public' } +
 		'\ncve references: ${gitlab_cves(issue)}\ncreated: ${issue.created_at}\nupdated: ${issue.updated_at}\nclosed: ${issue.closed_at}\nurl: ${issue.web_url}\n\nThis is a GitLab issue, not a published CVE record.'
 }
 
-fn (api Repository) gitlab_source_text(s Source, with_patch bool) !string {
+fn (api GitLab) source_text(s Source, with_patch bool) !string {
 	if s.kind == 'commit' {
-		path := '${api.gitlab_project()}/repository/commits/${urllib.path_escape(s.ref)}'
-		commit := json2.decode[GitLabCommit](api.gitlab_request(path)!)!
-		return '# ${commit.id}\nAuthor: ${commit.author_name}\nURL: ${commit.web_url}\n\n${commit.message}\n\n' + api.gitlab_diff('${path}/diff?per_page=100')!
+		path := '${api.project()}/repository/commits/${urllib.path_escape(s.ref)}'
+		commit := json2.decode[GitLabCommit](api.request(path)!)!
+		return '# ${commit.id}\nAuthor: ${commit.author_name}\nURL: ${commit.web_url}\n\n${commit.message}\n\n' + api.diff('${path}/diff?per_page=100')!
 	}
-	path := '${api.gitlab_project()}/${s.kind}/${s.ref}'
-	item := json2.decode[GitLabIssue](api.gitlab_request(path)!)!
+	path := '${api.project()}/${s.kind}/${s.ref}'
+	item := json2.decode[GitLabIssue](api.request(path)!)!
 	mut text := '# ${item.title}\n\nURL: ${item.web_url}\nAuthor: @${item.author.username}\nState: ${item.state}\nConfidential: ${item.confidential}\n'
 	if s.kind == 'merge_requests' {
 		text += 'Merged: ${item.state == 'merged'}\nMerged at: ${item.merged_at}\nMerge commit: ${item.merge_commit_sha}\nBase: ${item.target_branch}\nHead: ${item.source_branch}\n'
 	}
 	text += '\n${item.description}\n\n## Discussion\n'
-	for note in api.gitlab_list[GitLabNote]('${path}/notes?per_page=100&sort=asc')! {
+	for note in api.list[GitLabNote]('${path}/notes?per_page=100&sort=asc')! {
 		text += '\n### @${note.author.username}\n${item.web_url}#note_${note.id}\n\n${note.body}\n'
 	}
-	if s.kind == 'merge_requests' && with_patch { text += '\nMR patch:\n' + api.gitlab_diff('${path}/diffs?per_page=100')! }
+	if s.kind == 'merge_requests' && with_patch { text += '\nMR patch:\n' + api.diff('${path}/diffs?per_page=100')! }
 	return text
 }
 
-fn (api Repository) gitlab_diff(path string) !string {
+fn (api GitLab) diff(path string) !string {
 	mut text := ''
-	for diff in api.gitlab_list[GitLabDiff](path)! {
+	for diff in api.list[GitLabDiff](path)! {
 		text += 'diff --git a/${diff.old_path} b/${diff.new_path}\n--- a/${diff.old_path}\n+++ b/${diff.new_path}\n${diff.diff}\n'
 		if diff.too_large || diff.collapsed || diff.diff == '' { text += '[GitLab omitted this diff; inspect the commit locally.]\n' }
 	}
@@ -248,29 +262,29 @@ fn (api Repository) gitlab_diff(path string) !string {
 	return text
 }
 
-fn (api Repository) gitlab_create_advisory(a Adv) !string {
+fn (api GitLab) create_advisory(a Adv) !string {
 	payload := GitLabCreate{title: a.summary, description: gitlab_description(a), labels: gitlab_advisory_label()}
-	issue := json2.decode[GitLabIssue](api.gitlab_send('POST', '${api.gitlab_project()}/issues', json2.encode(payload))!)!
+	issue := json2.decode[GitLabIssue](api.send('POST', '${api.project()}/issues', json2.encode(payload))!)!
 	if issue.iid == 0 { return error('GitLab accepted creation but returned no issue IID; check the project before retrying') }
 	if !issue.confidential { return error('GL-${issue.iid} was created but GitLab did not confirm confidentiality; inspect ${issue.web_url}') }
 	return 'GL-${issue.iid}'
 }
 
-fn (api Repository) gitlab_update_advisory(id string, a Adv) ! {
+fn (api GitLab) write_advisory(id string, a Adv) ! {
 	iid := gitlab_iid(id)!
 	// Editing content never changes labels, state or confidentiality.
-	api.gitlab_send('PUT', '${api.gitlab_project()}/issues/${iid}', json2.encode(GitLabEdit{a.summary, gitlab_description(a)}))!
+	api.send('PUT', '${api.project()}/issues/${iid}', json2.encode(GitLabEdit{a.summary, gitlab_description(a)}))!
 }
 
-fn (api Repository) gitlab_set_state(id string, state string) ! {
+fn (api GitLab) set_state(id string, state string) ! {
 	if state !in ['opened', 'closed'] { return error('GitLab disclosures use opened/closed; use reopen or close. Publishing is not supported; manage visibility on GitLab.') }
 	iid := gitlab_iid(id)!
 	event := if state == 'opened' { 'reopen' } else { 'close' }
-	api.gitlab_send('PUT', '${api.gitlab_project()}/issues/${iid}', json2.encode({'state_event': event}))!
+	api.send('PUT', '${api.project()}/issues/${iid}', json2.encode({'state_event': event}))!
 }
 
-fn (api Repository) gitlab_cve_guidance(id string) !string {
-	issue := api.gitlab_issue(id)!
+fn (api GitLab) request_cve(id string) !string {
+	issue := api.issue(id)!
 	if api.host != 'gitlab.com' {
 		return 'GitLab CNA requests are available for public projects on GitLab.com, not this host.\nUse your CNA to request a CVE, then record its ID in ${issue.web_url}'
 	}

@@ -32,7 +32,7 @@ fn (api Repository) help_text() string {
 
 fn (api Repository) advisories(state string) ![][]string {
 	if state != '' && state !in api.states() { return error('invalid state: ${state}; choose ${api.states().join(', ')}') }
-	return if api.provider == 'gitlab' { api.gitlab_advisories(state)! } else { api.github_advisories(state)! }
+	return api.list_advisories(state)
 }
 
 // A single paginated release lookup serves the whole list. A release failure
@@ -59,52 +59,10 @@ fn (api Repository) advisories_with_releases(state string) ![][]string {
 	return rows
 }
 
-fn (api Repository) releases() !map[string]string {
-	return if api.provider == 'gitlab' { api.gitlab_releases()! } else { api.github_releases()! }
-}
-
-fn (api Repository) advisory(id string) !string {
-	return if api.provider == 'gitlab' { api.gitlab_advisory(id)! } else { api.github_advisory(id)! }
-}
-
-fn (api Repository) status(id string) !string {
-	return if api.provider == 'gitlab' { api.gitlab_status(id)! } else { api.github_status(id)! }
-}
-
-fn (api Repository) issues(label string) ![][]string {
-	return if api.provider == 'gitlab' { api.gitlab_issues(label)! } else { api.github_issues(label)! }
-}
-
-fn (api Repository) source_text(s Source, with_patch bool) !string {
-	return if api.provider == 'gitlab' { api.gitlab_source_text(s, with_patch)! } else { api.github_source_text(s, with_patch)! }
-}
-
-fn (api Repository) create_advisory(a Adv) !string {
-	return if api.provider == 'gitlab' { api.gitlab_create_advisory(a)! } else { api.github_create_advisory(a)! }
-}
-
 fn (api Repository) update_advisory(id string, a Adv) ! {
-	if api.provider == 'gitlab' { api.gitlab_update_advisory(id, a)! } else { api.github_update_advisory(id, a)! }
+	api.write_advisory(id, a)!
 	text := api.advisory(id) or { return error('Update accepted, but reloading ${id} failed: ${err}') }
 	saved := parse(text) or { return error('Update accepted, but the reloaded advisory is invalid: ${err}') }
 	fields := advisory_changes(a, saved)
 	if fields.len > 0 { return error('Update accepted, but the reloaded advisory differs in: ${fields.join(', ')}') }
-}
-
-fn (api Repository) set_state(id string, state string) ! {
-	if api.provider == 'gitlab' { api.gitlab_set_state(id, state)! } else { api.github_set_state(id, state)! }
-}
-
-fn (api Repository) request_cve(id string) !string {
-	return if api.provider == 'gitlab' { api.gitlab_cve_guidance(id)! } else { api.github_request_cve(id)! }
-}
-
-fn (api Repository) credits(id string) ![]Credit {
-	if api.provider == 'gitlab' { return error('GitLab has no structured advisory credits; use edit to maintain attribution in the report') }
-	return api.github_credits(id)
-}
-
-fn (api Repository) update_credits(id string, credits []Credit) ! {
-	if api.provider == 'gitlab' { return error('GitLab has no structured advisory credits; use edit') }
-	api.github_update_credits(id, credits)!
 }
