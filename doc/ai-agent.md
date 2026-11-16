@@ -42,6 +42,23 @@ before opening the editor or saving to the provider. Both files survive errors
 and interruptions; `claude.jsonl` can help repair `reply.txt` before `gsadv resume`.
 Successful advisory saves clean up both files; similar-bug reports retain them.
 
+When the agent fails without a final result, `reply.txt` can be empty — for example
+after hitting a usage limit. The event log still holds everything the agent said, so
+`gsadv recover` turns it into Markdown:
+
+```sh
+gsadv recover /tmp/gsadv-.../claude.jsonl --last -o partial.md
+```
+
+`--last` keeps only the interrupted run, skipping the earlier completed ones in the
+same session. By default only agent text is rendered; add `--tools` for the tool calls
+with truncated output (`--truncate 0` keeps it all), `--thinking` for reasoning, or
+`--all` for the prompt as well. Tool results and subagent chatter are dropped so the
+output reads as a partial reply instead of a log dump. A failed workflow also writes
+`recovered.md` next to `reply.txt` automatically, and the error message points to it.
+The recovered text is evidence to finish the work by hand; it is not an advisory the
+workflow will save.
+
 The pmai preset requires a version supporting `--progress`. To select it directly:
 
 ```sh

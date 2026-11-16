@@ -112,3 +112,83 @@ fn test_claude_tool_progress_quotes_controls_and_bounds_unicode() ! {
 	unknown := json2.decode[ClaudeContent]('{"type":"tool_use","name":"Custom"}')!
 	assert claude_tool_progress(unknown) == '[claude] tool: Custom'
 }
+
+fn test_recovered_transcript_keeps_partial_text() ! {
+	dir := start_edit(Repository{repo: 'owner/repo'}, 'GHSA-test', 'review', '', '')!
+	defer { os.rmdir_all(dir) or {} }
+	log := os.join_path(dir, 'claude.jsonl')
+	quota := "You've hit your individual spend limit"
+	lines := [
+		// A previous, completed run must not leak into --last output.
+		'{"type":"assistant","message":{"content":[{"type":"text","text":"old answer"}]}}',
+		'{"type":"system","subtype":"task_progress","summary":"ignored"}',
+		// A finished run closes with an empty result, after its reply.
+		'{"type":"result","is_error":false,"result":"old answer"}',
+		'{"type":"result","is_error":false,"result":""}',
+		// The interrupted run: findings text, a tool call, then the quota failure.
+		'{"type":"assistant","message":{"content":[{"type":"thinking","thinking":"hidden"},{"type":"text","text":"First finding: heap overflow"},{"type":"tool_use","name":"Bash","input":{"command":"make test"}}]}}',
+		'{"type":"assistant","message":{"content":[{"type":"text","text":"${quota}"}]}}',
+		'{"type":"result","is_error":true,"result":"${quota}"}',
+		'{"type":"result","is_error":false,"result":""}',
+	]
+	os.write_file(log, lines.join('\n') + '\n')!
+	text := recover_chat(log, RecoverOptions{ last: true })!
+	assert text.contains('First finding: heap overflow')
+	assert !text.contains('old answer')
+	assert !text.contains('hidden')
+	assert !text.contains('make test')
+	// The quota text only appears as the stop reason, never as assistant text.
+	assert text.contains('Stopped:** ${quota}')
+	assert text.split_into_lines().filter(it.starts_with('### ')).len == 1
+	with_tools := recover_chat(log, RecoverOptions{ last: true, no_tools: false })!
+	assert with_tools.contains('Bash') && with_tools.contains('make test')
+	everything := recover_chat(log, RecoverOptions{})!
+	assert everything.contains('old answer')
+}
+
+fn test_recovered_last_run_without_failure_is_not_a_stop() ! {
+	dir := start_edit(Repository{repo: 'owner/repo'}, 'GHSA-test', 'review', '', '')!
+	defer { os.rmdir_all(dir) or {} }
+	log := os.join_path(dir, 'claude.jsonl')
+	lines := [
+		'{"type":"assistant","message":{"content":[{"type":"text","text":"old answer"}]}}',
+		'{"type":"result","is_error":false,"result":"old answer"}',
+		'{"type":"result","is_error":false,"result":""}',
+		'{"type":"assistant","message":{"content":[{"type":"text","text":"final answer"}]}}',
+		'{"type":"result","is_error":false,"result":"final answer"}',
+		'{"type":"result","is_error":false,"result":""}',
+	]
+	os.write_file(log, lines.join('\n') + '\n')!
+	text := recover_chat(log, RecoverOptions{ last: true })!
+	assert text.contains('final answer')
+	assert !text.contains('old answer')
+	assert !text.contains('Stopped:')
+}
+
+fn test_recovered_transcript_survives_damaged_log() ! {
+	dir := start_edit(Repository{repo: 'owner/repo'}, 'GHSA-test', 'review', '', '')!
+	defer { os.rmdir_all(dir) or {} }
+	log := os.join_path(dir, 'claude.jsonl')
+	os.write_file(log, '{"type":"assistant","message":{"content":[{"type":"text","text":"kept"}]}}\n{"type":\n')!
+	text := recover_chat(log, RecoverOptions{})!
+	assert text.contains('kept')
+	assert text.contains('Invalid log line')
+	if _ := recover_chat(os.join_path(dir, 'missing.jsonl'), RecoverOptions{}) {
+		assert false, 'accepted a missing transcript'
+	}
+}
+
+fn test_cli_accepts_recovery_directory() ! {
+	dir := start_edit(Repository{repo: 'owner/repo'}, 'GHSA-test', 'review', '', '')!
+	defer { os.rmdir_all(dir) or {} }
+	os.write_file(os.join_path(dir, 'claude.jsonl'), '{"type":"assistant","message":{"content":[{"type":"text","text":"partial"}]}}\n')!
+	out := os.join_path(dir, 'out.md')
+	cmd_recover([dir, '-o', out, '--raw'])!
+	assert os.read_file(out)!.contains('partial')
+	if _ := cmd_recover([]string{}) {
+		assert false, 'accepted a missing log'
+	}
+	if _ := cmd_recover([dir, '--nope']) {
+		assert false, 'accepted an unknown option'
+	}
+}

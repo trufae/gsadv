@@ -19,6 +19,7 @@ gsadv [-r namespace/repo|url] [--provider github|gitlab] [--host hostname] [--re
   review <id> [context]   let the AI review/rewrite it, then edit
   similar <id|commit|url> [context] find similar bugs using the selection as a template
   resume <directory>       continue saved work without running the AI again
+  recover <log|directory>  render a saved claude.jsonl as Markdown (partial replies)
   cve <id>                 GitHub: request CVE; GitLab: show CVE request instructions
   approve <id>            alias for cve
   draft <id>              accept a report or reopen as a draft
@@ -167,6 +168,31 @@ the files. See [recovery](advisory-format.md#recovery) for the files and Ctrl+C 
 
 For `similar`, it reopens the saved findings report, including partial output, without
 running the AI or updating GitHub. Reports remain in the recovery directory after viewing.
+
+### recover
+
+`gsadv recover <claude.jsonl|directory>` renders a saved Claude event stream as Markdown
+when the AI reply was lost, typically because the run died without a final result and left
+an empty `reply.txt`. Pass the log or its recovery directory and redirect the output:
+
+```sh
+gsadv recover /tmp/gsadv-01ABC.../claude.jsonl --last -o partial.md
+```
+
+| Option | Effect |
+| --- | --- |
+| `--last` | only the interrupted run, not the completed ones before it |
+| `--tools` | keep tool calls and their output (default: agent text only) |
+| `--truncate <n>` | bytes kept per tool result; `0` keeps everything |
+| `--thinking` | include reasoning blocks |
+| `--all` | include the user prompt as well |
+| `--raw` | plain text with role prefixes, no Markdown decoration |
+| `-o, --output <file>` | write to a file instead of stdout |
+
+Tool calls become a single line each and their output is omitted, so what remains reads
+as a partial report instead of a transcript dump. The result is evidence for finishing the
+work by hand; it is not parsed as an advisory, and nothing is saved to the provider.
+A failed workflow also writes `recovered.md` and mentions it in the error message.
 
 ### cve / approve
 

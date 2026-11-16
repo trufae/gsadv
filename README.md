@@ -144,6 +144,7 @@ Key commands:
 | `review <id> [context]` | AI review, then edit |
 | `similar <id\|commit\|url> [context]` | find similar bugs |
 | `resume <dir>` | continue saved work |
+| `recover <log\|dir>` | turn a saved `claude.jsonl` into Markdown when the reply is lost |
 | `cve <id>` | request a GitHub CVE or show GitLab request instructions |
 | `close/reopen <id>` | close or reopen an advisory/disclosure |
 | `draft/publish <id>` | change GitHub advisory state |

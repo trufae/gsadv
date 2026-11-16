@@ -23,6 +23,7 @@ const help = 'Usage: gsadv [-r namespace/repo|url] [--provider github|gitlab] [-
   review <id> [context]   let the AI review/rewrite it, then edit
   similar <id|commit|url> [context] find similar bugs using the selection as a template
   resume <directory>       continue saved work without running the AI again
+  recover <log|directory> [opts] turn a saved claude.jsonl into Markdown (partial replies)
   cve <id>                 GitHub: request CVE; GitLab: show CVE request instructions
   approve <id>            alias for cve
   draft <id>              accept a report or reopen as a draft
@@ -76,6 +77,13 @@ fn main() {
 	cmd := if args.len > 0 { args[0] } else { 'tui' }
 	id := if args.len > 1 { args[1] } else { '' }
 	ctx := if args.len > 2 { args[2..].join(' ') } else { '' }
+	if cmd == 'recover' {
+		cmd_recover(args[1..]) or {
+			eprintln('error: ${err}')
+			exit(1)
+		}
+		return
+	}
 	if cmd == 'resume' {
 		if id == '' {
 			eprintln('usage: gsadv resume <recovery-directory>')

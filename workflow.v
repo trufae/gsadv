@@ -307,7 +307,25 @@ struct ClaudeContent {
 	type string
 	text string
 	name string
+	// tool_result content is a string or a list of text blocks.
+	content ?json2.Any
 	input map[string]json2.Any
+}
+
+fn (block ClaudeContent) output() string {
+	c := block.content or { return '' }
+	if c is string { return c }
+	if c is []json2.Any {
+		mut parts := []string{}
+		for item in c {
+			if item is map[string]json2.Any {
+				text := item['text'] or { continue }
+				if text is string { parts << text }
+			}
+		}
+		return parts.join('\n')
+	}
+	return json2.encode(c)
 }
 
 struct ClaudeMessage {
@@ -399,8 +417,313 @@ fn (mut stream ClaudeStream) event(line string, output string) ! {
 fn ai_error(dir string, reason string) IError {
 	path := os.join_path(dir, 'reply.txt')
 	out := os.read_file(path) or { '' }
-	preview := if out.trim_space() == '' { '(empty reply)' } else { out#[..2000] }
-	return error('${reason}\nNo changes saved to the server. AI reply (${path}):\n${preview}')
+	if out.trim_space() != '' {
+		return error('${reason}\nNo changes saved to the server. AI reply (${path}):\n${out#[..2000]}')
+	}
+	// The transcript still holds what the agent concluded; keep a readable copy.
+	log := os.join_path(dir, 'claude.jsonl')
+	if os.exists(log) {
+		if text := recover_chat(log, RecoverOptions{ last: true }) {
+			recovered := os.join_path(dir, 'recovered.md')
+			os.write_file(recovered, text) or {}
+			return error('${reason}\nNo changes saved to the server. AI reply was empty.\nPartial conversation recovered in ${recovered}\nA final report saved before failing can be extracted with:\n  gsadv recover ${log} --last')
+		}
+	}
+	return error('${reason}\nNo changes saved to the server. AI reply (${path}):\n(empty reply)')
+}
+
+const recover_help = 'Usage: gsadv recover <claude.jsonl|recovery-directory> [options]
+Turn a Claude stream-json transcript into Markdown, without the tool call boilerplate.
+  -o, --output <file>  write the result to a file instead of stdout
+  --last               only what follows the last completed run (the interrupted one)
+  --all                include the user prompt and thinking blocks
+  --tools              include tool calls and their output (default: assistant text only)
+  --truncate <n>       bytes of tool output kept per call (default 4000, 0 keeps all)
+  --raw                plain text with role prefixes, no Markdown decorations
+The transcript records every message, so it recovers what the agent concluded even
+when reply.txt is empty. It is partial evidence, never a valid advisory to save.'
+
+struct RecoverOptions {
+mut:
+	last     bool
+	full     bool
+	no_tools bool = true
+	thinking bool
+	raw      bool
+	truncate int = 4000
+}
+
+fn cmd_recover(args []string) ! {
+	mut opts := RecoverOptions{}
+	mut log := ''
+	mut output := ''
+	mut i := 0
+	for i < args.len {
+		arg := args[i]
+		i++
+		match arg {
+			'-h', '--help' { println(recover_help); return }
+			'--last' { opts.last = true }
+			'--all' { opts.full = true }
+			'--tools' { opts.no_tools = false }
+			'--thinking' { opts.thinking = true }
+			'--raw' { opts.raw = true }
+			'-o', '--output' {
+				if i >= args.len { return error('missing value for ${arg}') }
+				output = args[i]
+				i++
+			}
+			'--truncate' {
+				if i >= args.len { return error('missing value for ${arg}') }
+				opts.truncate = args[i].int()
+				i++
+			}
+			else {
+				if arg.starts_with('-') { return error('unknown option ${arg}') }
+				if log != '' { return error('unexpected argument ${arg}') }
+				log = arg
+			}
+		}
+	}
+	if log == '' { return error('missing session log\n${recover_help}') }
+	// A recovery directory holds the session files next to reply.txt.
+	path := if os.is_dir(log) { os.join_path(log, 'claude.jsonl') } else { log }
+	text := recover_chat(path, opts)!
+	if output != '' {
+		os.write_file(output, text)!
+		eprintln('recovered ${text.split_into_lines().len} lines in ${output}')
+		return
+	}
+	print(text)
+}
+
+struct ChatBlock {
+	kind   string // text, thinking, tool or tool output
+	text   string
+	detail string
+}
+
+struct ChatEvent {
+	role    string
+	blocks  []ChatBlock
+	// A result ends a run: ok marks the runs that completed, error ones did not.
+	is_done bool
+	ok      bool
+	reply   bool
+	result  string
+}
+
+// Decode the messages of a stream-json log, ignoring bookkeeping events.
+fn read_chat(path string) ![]ChatEvent {
+	if !os.exists(path) { return error('${path} does not exist') }
+	mut events := []ChatEvent{}
+	// split on newlines so a truncated last line is kept and reported as damaged
+	for line in os.read_file(path)!.split_into_lines() {
+		if line.trim_space() == '' { continue }
+		// json2 accepts truncated objects, so the event type is checked on the result.
+		event := json2.decode[ClaudeEvent](line) or {
+			events << ChatEvent{
+				role: 'error'
+				blocks: [ChatBlock{
+					kind: 'text'
+					text: 'Invalid log line: ${err}'
+				}]
+			}
+			continue
+		}
+		if event.type == '' {
+			events << ChatEvent{
+				role: 'error'
+				blocks: [ChatBlock{
+					kind: 'text'
+					text: 'Invalid log line: ${line#[..(if line.len > 80 { 80 } else { line.len })]}'
+				}]
+			}
+			continue
+		}
+		match event.type {
+			'result' {
+				// Empty results close a run without adding a reply of their own.
+				events << ChatEvent{
+					is_done: true
+					ok: !event.is_error
+					// The final result carries the reply; it replaces the notes so far.
+					reply: event.result.trim_space() != '' && !event.is_error
+					result: event.result
+				}
+			}
+			'assistant', 'user' {
+				role := if event.parent_tool_use_id != none { 'subagent' } else if event.type == 'assistant' {
+					'assistant'
+				} else {
+					'user'
+				}
+				mut blocks := []ChatBlock{}
+				for block in event.message.content {
+					match block.type {
+						'text' {
+							blocks << ChatBlock{
+								kind: 'text'
+								text: block.text
+							}
+						}
+						'thinking' {
+							blocks << ChatBlock{
+								kind: 'thinking'
+								text: block.text
+							}
+						}
+						'tool_use' {
+							blocks << ChatBlock{
+								kind: 'tool'
+								text: block.name
+								detail: claude_tool_detail(block)
+							}
+						}
+						'tool_result' {
+							blocks << ChatBlock{
+								kind: event.type
+								text: block.output()
+							}
+						}
+						else {}
+					}
+				}
+				if blocks.len > 0 { events << ChatEvent{role: role, blocks: blocks} }
+			}
+			else {}
+		}
+	}
+	return events
+}
+
+fn claude_tool_detail(block ClaudeContent) string {
+	mut parts := []string{}
+	for key in ['description', 'command', 'file_path', 'notebook_path', 'path', 'pattern',
+		'glob', 'url', 'query', 'subagent_type', 'offset', 'limit'] {
+		value := block.input[key] or { continue }
+		mut text := json2.encode(value)
+		if value is string && value.trim_space() == '' { continue }
+		if text.len > 200 { text = text#[..197] + '...' }
+		parts << '${key}=${text}'
+	}
+	return parts.join(' ')
+}
+
+fn truncate_text(text string, limit int) string {
+	if limit <= 0 || text.len <= limit { return text }
+	return text#[..limit] + '\n... (truncated)'
+}
+
+// Tool calls become one line each, so the reply text stays readable; a run whose
+// final result never arrived is still recovered as its partial conversation.
+fn recover_chat(path string, opts RecoverOptions) !string {
+	events := read_chat(path)!
+	mut first := 0
+	mut last := events.len
+	mut failure := ''
+	if opts.last {
+		// Only an error result marks an interrupted run; a normal reply is not a stop.
+		for i := events.len - 1; i >= 0; i-- {
+			if events[i].is_done && !events[i].ok && events[i].result.trim_space() != '' {
+				failure = events[i].result.trim_space()
+				last = i
+				break
+			}
+		}
+		// A completed run closes with a reply result followed by an empty one. When that
+		// closing pair sits right before the failure, its reply is recovered too.
+		for i := last - 1; i >= 0; i-- {
+			if events[i].is_done && events[i].ok && events[i].result.trim_space() == '' {
+				first = i + 1
+				if first >= last && i > 0 && events[i - 1].is_done && events[i - 1].reply {
+					first = i - 1
+				}
+				break
+			}
+		}
+	}
+	mut out := []string{}
+	if !opts.raw {
+		out << '# Recovered conversation'
+		out << ''
+		out << 'Partial transcript of `${os.file_name(path)}`, without tool call boilerplate.'
+		out << if opts.no_tools {
+			'Only the agent text is shown; pass --tools to include its tool calls.'
+		} else {
+			'Tool output may be truncated; incomplete statements are expected.'
+		}
+		out << ''
+	}
+	mut tools := 0
+	for i := first; i < last; i++ {
+		e := events[i]
+		if e.is_done {
+			// The failure is reported once, as the stop reason below.
+			if e.result.trim_space() != '' && e.result.trim_space() != failure {
+				out << (if opts.raw { 'Result:' } else { '> **Result:**' }) + ' ${e.result.trim_space()}'
+				out << ''
+			}
+			continue
+		}
+		mut lines := []string{}
+		mut output := []string{}
+		for block in e.blocks {
+			match block.kind {
+				'text' {
+					// Damaged lines are reported even when only assistant text is wanted.
+					if e.role == 'error' { lines << block.text }
+					text := block.text.trim_space()
+					// The API repeats a quota or auth failure as assistant text.
+					if failure != '' && text.contains(failure) { continue }
+					// --raw only drops the Markdown decoration, so it keeps every message.
+					if text != '' && (opts.raw || e.role == 'assistant' || opts.full) { lines << text }
+				}
+				'thinking' {
+					if opts.thinking && block.text.trim_space() != '' {
+						lines << '_thinking:_ ${block.text.trim_space()}'
+					}
+				}
+				'tool' {
+					if opts.no_tools { continue }
+					tools++
+					detail := if block.detail == '' { '' } else { ': ${block.detail}' }
+					mark := if opts.raw { '' } else { '- ' }
+					lines << '${mark}`${block.text}`${detail}'
+				}
+				'user' {
+					if opts.no_tools { continue }
+					text := truncate_text(block.text.trim_space(), opts.truncate)
+					if text != '' { output << text }
+				}
+				else {}
+			}
+		}
+		if lines.len == 0 && output.len == 0 { continue }
+		if lines.len > 0 {
+			out << (if opts.raw { '${e.role}:' } else { '### ${e.role}' })
+			out << lines.join('\n')
+			out << ''
+		}
+		if output.len > 0 {
+			if !opts.raw { out << '```' }
+			out << output.join('\n')
+			if !opts.raw { out << '```' }
+			out << ''
+		}
+	}
+	if failure != '' {
+		out << ''
+		out << (if opts.raw { 'Stopped:' } else { '> **Stopped:**' }) + ' ${failure}'
+	}
+	if out.len == 0 { return 'No messages recovered from ${path}; the agent stopped before replying.\n' }
+	if !opts.raw && tools > 0 {
+		out << ''
+		out << '---'
+		out << '${tools} tool call(s) summarized. Use --thinking for reasoning, --truncate 0 for full'
+		out << 'tool output, or --last to show only the interrupted run.'
+	}
+	return out.join('\n') + '\n'
 }
 
 fn ai_reply(out string) !(string, string) {
