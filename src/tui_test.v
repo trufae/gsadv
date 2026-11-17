@@ -133,6 +133,62 @@ fn test_list_cache_refreshes_links_filters_and_row_width() {
 	assert !list.line(0, entries, [], 1, 120, false).contains('GHSA-one')
 }
 
+fn test_state_filters_follow_the_provider_and_view() {
+	github := Repository(GitHub{})
+	gitlab := Repository(GitLab{})
+	assert github.tui_states(0) == github.states()
+	assert gitlab.tui_states(0) == gitlab.states()
+	for api in [github, gitlab] {
+		assert api.tui_states(1) == ['all']
+	}
+	assert github.tui_states(2) == ['all', 'open', 'closed']
+	assert github.tui_states(3) == ['all', 'open', 'closed']
+	assert gitlab.tui_states(2) == ['all', 'opened', 'closed']
+	assert gitlab.tui_states(3) == ['all', 'opened', 'closed', 'merged']
+}
+
+fn test_issue_state_filter_uses_state_column_and_combines_with_text() {
+	for view in [2, 3] {
+		entries := [['url/1', '1', 'issue', 'open', 'Parser bounds'],
+			['url/2', '2', 'issue', 'closed', 'Reopen parser'],
+			['url/3', '3', 'PR', 'open', 'Other fix'], ['error:', 'unavailable']]
+		mut list := TuiList{}
+		list.rebuild(entries, [], AdvisoryLinks{}, view)
+		list.filter(entries, '', 'open')
+		assert list.visible == [0, 2]
+		list.filter(entries, 'PARSER', 'open')
+		assert list.visible == [0]
+		list.filter(entries, 'parser', 'closed')
+		assert list.visible == [1]
+		list.filter(entries, 'parser', 'all')
+		assert list.visible == [0, 1]
+		list.filter(entries, '', 'all')
+		assert list.visible == [0, 1, 2, 3]
+	}
+}
+
+fn test_gitlab_merge_request_state_filter_refreshes_with_new_rows() {
+	mut entries := [['url/1', '1', 'MR', 'opened', 'Fix parser'],
+		['url/2', '2', 'MR', 'merged', 'Fix parser'],
+		['url/3', '3', 'MR', 'closed', 'Fix parser']]
+	mut list := TuiList{}
+	list.rebuild(entries, [], AdvisoryLinks{}, 3)
+	list.filter(entries, '', 'opened')
+	assert list.visible == [0]
+	list.filter(entries, '', 'merged')
+	assert list.visible == [1]
+	entries << ['url/4', '4', 'MR', 'merged', 'Another fix']
+	list.rebuild(entries, [], AdvisoryLinks{}, 3)
+	list.filter(entries, '', 'merged')
+	assert list.visible == [1, 3]
+	// Advisory state filtering still uses the advisory's second column.
+	advs := [['GHSA-one', 'draft', '-', 'high', 'Parser'],
+		['GHSA-two', 'closed', '-', 'high', 'Other fix']]
+	list.rebuild(advs, advs, advisory_links(advs), 0)
+	list.filter(advs, '', 'draft')
+	assert list.visible == [0]
+}
+
 fn test_selection_movement_only_paints_two_rows() {
 	mut screen := TuiScreen{}
 	mut lines := []string{len: 30, init: 'Row ${index} 界 e\u0301'}

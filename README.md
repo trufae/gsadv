@@ -11,6 +11,10 @@ disclosures, written in [V](https://vlang.io).
   issues on GitLab.
 
 Run `gsadv` inside a repository to open the terminal UI.
+In the issues or PR/MR tab, press `f` once to show only open items. Press `f` again
+for closed items, or `F` to go back; GitLab MRs also have a merged filter. State
+filters are remembered separately for each tab and combine with `l` (label) and
+`/` (text) filters.
 
 ## Install
 

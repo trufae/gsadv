@@ -232,7 +232,8 @@ b: find similar bugs using the selected advisory or source as a template
 C: manage advisory credits (finder, reporter, fix developer and other roles)
 c (or a): request CVE; d: accept/reopen as draft; p: publish; x: close
 i: tag the selected item invalid locally (with a reason); I: remove the tag
-s: advisory status; m: actions menu; f/F: next/previous advisory state filter
+s: advisory status; m: actions menu; f/F: next/previous state filter in the current tab
+In issues/PRs/MRs, press f once from all to show only open items; each tab remembers its filter.
 /: filter the current list by text (Enter applies; empty clears; Esc cancels)
 l: change the shared issues/PRs/MRs label filter (empty shows all labels)
 g: reload; A: cycle AI agent
@@ -838,7 +839,7 @@ fn tui(initial_api Repository, initial_label string) {
 	if api.repo != '' {
 		invalid = api.invalid_marks() or { status = 'local invalid tags: ${err}'; map[string]string{} }
 	}
-	mut filter := 0
+	mut state_filters := [0, 0, 0, 0]
 	mut queries := ['', '', '', '']
 	mut screen := TuiScreen{}
 	raw()
@@ -886,7 +887,7 @@ fn tui(initial_api Repository, initial_label string) {
 				.repository {
 					if result.error == '' && result.text != '' {
 						api = result.repository
-						filter = 0
+						state_filters = [0, 0, 0, 0]
 						invalid = api.invalid_marks() or { status = 'local invalid tags: ${err}'; map[string]string{} }
 						changed = [true, true, true, true]
 						loader.request(api, label, .advisories, false)
@@ -928,7 +929,7 @@ fn tui(initial_api Repository, initial_label string) {
 				.git_status { git_status = result.text }
 			}
 		}
-		filters := api.states()
+		filters := api.tui_states(view)
 		w, h := terminal_size()
 		width := line_width(w)
 		layout := tui_layout(h, 3, 3)
@@ -939,7 +940,7 @@ fn tui(initial_api Repository, initial_label string) {
 				lists[v].mark_invalid(entries, invalid)
 				changed[v] = false
 			}
-			lists[v].filter(entries, queries[v], if v == 0 { filters[filter] } else { 'all' })
+			lists[v].filter(entries, queries[v], api.tui_states(v)[state_filters[v]])
 		}
 		visible := lists.map(it.visible)
 		advisory_matches := lists[0].matches
@@ -964,8 +965,10 @@ fn tui(initial_api Repository, initial_label string) {
 		records_title := if api.provider == 'gitlab' { 'disclosures' } else { 'advisories' }
 		prs_title := if api.provider == 'gitlab' { 'MRs' } else { 'PRs' }
 		label_hint := if label == '' { 'all labels' } else { 'label: ${label}' }
-		mut tabs := ['${records_title} ${visible[0].len} (${filters[filter]})', 'commits ${visible[1].len}',
-			'issues ${visible[2].len} (${label_hint})', '${prs_title} ${visible[3].len} (${label_hint})']
+		issue_hint := if lists[2].state == 'all' { label_hint } else { '${lists[2].state}; ${label_hint}' }
+		pr_hint := if lists[3].state == 'all' { label_hint } else { '${lists[3].state}; ${label_hint}' }
+		mut tabs := ['${records_title} ${visible[0].len} (${lists[0].state})', 'commits ${visible[1].len}',
+			'issues ${visible[2].len} (${issue_hint})', '${prs_title} ${visible[3].len} (${pr_hint})']
 		repo_pending := loader.pending[int(TuiLoadKind.repository)]
 		for v in 0 .. tabs.len {
 			if !loaded[v] { tabs[v] += if v != 1 && api.repo == '' && !repo_pending { ' unavailable' } else { ' loading...' } }
@@ -999,7 +1002,7 @@ fn tui(initial_api Repository, initial_label string) {
 			} else if view == 0 {
 				'No entries. Press f/F to change the filter or g to reload.'
 			} else if view >= 2 {
-				'No entries. Press l to change the label filter or g to reload.'
+				'No entries. Press l to change the label filter, f/F for state or g to reload.'
 			} else {
 				'No entries. Press g to reload or n to enter a commit/URL.'
 			})
@@ -1078,7 +1081,7 @@ fn tui(initial_api Repository, initial_label string) {
 				next := (view + step) % tabs.len
 				if next == 0 && ai in advisory_matches {
 					if ai !in visible[0] {
-						filter = 0
+						state_filters[0] = 0
 						sel[0] = advisory_matches.index(ai)
 					} else {
 						sel[0] = visible[0].index(ai)
@@ -1097,8 +1100,8 @@ fn tui(initial_api Repository, initial_label string) {
 			}
 			'f', 'F' {
 				step := if k == 'f' { 1 } else { filters.len - 1 }
-				filter = (filter + step) % filters.len
-				sel[0], top[0] = 0, 0
+				state_filters[view] = (state_filters[view] + step) % filters.len
+				sel[view], top[view] = 0, 0
 			}
 			'/' {
 				screen.width = 0

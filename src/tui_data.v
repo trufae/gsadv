@@ -109,6 +109,13 @@ struct TuiRow {
 	selected string
 }
 
+fn (api Repository) tui_states(view int) []string {
+	if view == 0 { return api.states() }
+	if view == 1 { return ['all'] }
+	if api.provider == 'github' { return ['all', 'open', 'closed'] }
+	return if view == 3 { ['all', 'opened', 'closed', 'merged'] } else { ['all', 'opened', 'closed'] }
+}
+
 // Search/link work is tied to data changes. Row formatting is lazy and cached at
 // the current width, including the selected variant, so movement only paints it.
 struct TuiList {
@@ -122,10 +129,12 @@ mut:
 	width int
 	query string
 	state string
+	state_column int
 	filtered bool
 }
 
 fn (mut list TuiList) rebuild(entries [][]string, advs [][]string, links AdvisoryLinks, view int) {
+	list.state_column = if view >= 2 { 3 } else { 1 }
 	list.links = []int{len: entries.len, init: -1}
 	list.search = []string{len: entries.len}
 	list.invalid = []string{len: entries.len}
@@ -158,7 +167,7 @@ fn (mut list TuiList) filter(entries [][]string, query string, state string) {
 	for i, text in list.search {
 		if needle == '' || text.contains(needle) {
 			list.matches << i
-			if state == 'all' || (entries[i].len > 1 && entries[i][1] == state) { list.visible << i }
+			if state == 'all' || (entries[i].len > list.state_column && entries[i][list.state_column] == state) { list.visible << i }
 		}
 	}
 	list.filtered = true
