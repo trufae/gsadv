@@ -14,6 +14,7 @@ interface Repository {
 	advisory(id string) !string
 	status(id string) !string
 	issues(label string) ![][]string
+	issue_page(label string, page int) !([][]string, bool)
 	source_text(s Source, with_patch bool) !string
 	comment(s Source, body string) !string
 	create_advisory(a Adv) !string

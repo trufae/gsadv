@@ -11,6 +11,9 @@ disclosures, written in [V](https://vlang.io).
   issues on GitLab.
 
 Run `gsadv` inside a repository to open the terminal UI.
+Press `l` to change the shared issue/PR/MR label filter; an empty value shows all
+labels. Results appear page by page while the remaining history loads in the
+background. Changing the label takes effect after the current page finishes.
 In the issues or PR/MR tab, press `f` once to show only open items. Press `f` again
 for closed items, or `F` to go back; GitLab MRs also have a merged filter. State
 filters are remembered separately for each tab and combine with `l` (label) and

@@ -134,7 +134,8 @@ def stub():
     if method != 'GET':
         state_path.write_text(json.dumps(issues))
     if isinstance(result, list):
-        assert '--paginate' in args and args[args.index('--output') + 1] == 'ndjson'
+        assert '--paginate' in args or ('page' in query and endpoint in ['issues', 'merge_requests'])
+        assert args[args.index('--output') + 1] == 'ndjson'
         for item in result:
             print(json.dumps(item))
     else:

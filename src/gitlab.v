@@ -232,6 +232,24 @@ fn (api GitLab) issues(label string) ![][]string {
 	return rows
 }
 
+fn (api GitLab) issue_page(label string, page int) !([][]string, bool) {
+	filter := if label == '' { '' } else { '&labels=${urllib.query_escape(label)}' }
+	mut rows := [][]string{}
+	mut more := false
+	for kind in ['issues', 'merge_requests'] {
+		out := api.request('${api.project()}/${kind}?scope=all&state=all&per_page=100${filter}&page=${page}',
+			'--output', 'ndjson')!
+		lines := out.split_into_lines().filter(it.trim_space() != '')
+		more = more || lines.len == 100
+		for line in lines {
+			item := json2.decode[GitLabIssue](line)!
+			rows << [item.web_url, item.iid.str(), if kind == 'issues' { 'issue' } else { 'MR' },
+				item.state, item.title]
+		}
+	}
+	return rows, more
+}
+
 fn (api GitLab) status(id string) !string {
 	issue := api.issue(id)!
 	return 'disclosure: GL-${issue.iid}\nstate: ${issue.state}\nvisibility: ' +

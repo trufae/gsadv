@@ -12,15 +12,18 @@ enum TuiLoadKind {
 
 struct TuiLoad {
 	kind TuiLoadKind
-	rows [][]string
 	text string
 	error string
 	repository Repository = GitHub{}
+	more bool
+mut:
+	rows [][]string
 }
 
 // Workers own their results; only the input loop changes the displayed snapshot.
-fn tui_load(api Repository, label string, kind TuiLoadKind, results chan TuiLoad) {
+fn tui_load(api Repository, label string, kind TuiLoadKind, page int, results chan TuiLoad) {
 	mut rows := [][]string{}
+	mut more := false
 	mut text := ''
 	mut failure := ''
 	mut repository := api
@@ -32,10 +35,10 @@ fn tui_load(api Repository, label string, kind TuiLoadKind, results chan TuiLoad
 		}
 		.advisories { rows = api.advisories_with_releases('') or { failure = err.msg(); [][]string{} } }
 		.commits { rows = commits() or { failure = err.msg(); [][]string{} } }
-		.issues { rows = api.issues(label) or { failure = err.msg(); [][]string{} } }
+		.issues { rows, more = api.issue_page(label, page) or { failure = err.msg(); [][]string{}, false } }
 		.git_status { text = local_git_status() }
 	}
-	results <- TuiLoad{kind, rows, text, failure, repository}
+	results <- TuiLoad{kind: kind, rows: rows, text: text, error: failure, repository: repository, more: more}
 }
 
 struct TuiLoader {
@@ -43,6 +46,8 @@ struct TuiLoader {
 mut:
 	pending []bool = []bool{len: 5}
 	again []bool = []bool{len: 5}
+	issue_page int = 1
+	issue_rows [][]string
 }
 
 // Coalesce repeated reloads. A workflow may require a fresh snapshot after an
@@ -54,7 +59,11 @@ fn (mut loader TuiLoader) request(api Repository, label string, kind TuiLoadKind
 		return
 	}
 	loader.pending[i] = true
-	spawn tui_load(api, label, kind, loader.results)
+	if kind == .issues {
+		loader.issue_page = 1
+		loader.issue_rows = [][]string{}
+	}
+	spawn tui_load(api, label, kind, 1, loader.results)
 }
 
 fn (mut loader TuiLoader) poll(api Repository, label string) ?TuiLoad {
@@ -67,6 +76,17 @@ fn (mut loader TuiLoader) poll(api Repository, label string) ?TuiLoad {
 			loader.again[i] = false
 			loader.request(api, label, result.kind, false)
 			continue
+		}
+		if result.kind == .issues && result.error == '' {
+			// Schedule one page at a time so new labels supersede a download
+			// without waiting for the rest of the repository's history.
+			loader.issue_rows << result.rows
+			result.rows = loader.issue_rows.clone()
+			if result.more {
+				loader.pending[i] = true
+				loader.issue_page++
+				spawn tui_load(api, label, .issues, loader.issue_page, loader.results)
+			}
 		}
 		return result
 	}

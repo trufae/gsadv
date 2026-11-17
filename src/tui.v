@@ -914,17 +914,19 @@ fn tui(initial_api Repository, initial_label string) {
 					loaded[1] = true
 				}
 				.issues {
-					if result.error == '' {
+					// Populate a new filter progressively; keep an existing snapshot
+					// and its selection intact until a full refresh succeeds.
+					if result.error == '' && (!loaded[2] || !result.more) {
 						issues := result.rows.filter(it.len >= 5 && it[2] == 'issue')
 						pulls := result.rows.filter(it.len >= 5 && it[2] in ['PR', 'MR'])
 						if issues != items { items, changed[2] = issues.clone(), true }
 						if pulls != prs { prs, changed[3] = pulls.clone(), true }
-					} else if !loaded[2] {
+					} else if result.error != '' && !loaded[2] && items.len == 0 && prs.len == 0 {
 						items = [['error:', result.error]]
 						prs = items.clone()
 						changed[2], changed[3] = true, true
 					}
-					loaded[2], loaded[3] = true, true
+					if !result.more { loaded[2], loaded[3] = true, true }
 				}
 				.git_status { git_status = result.text }
 			}

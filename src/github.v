@@ -142,12 +142,22 @@ fn (api GitHub) request_cve(id string) !string {
 }
 
 // The issues endpoint includes pull requests. Closed items may still need a CVE.
-fn (api GitHub) issues(label string) ![][]string {
+fn (api GitHub) issues_path(label string) string {
 	filter := if label == '' { '' } else { '&labels=${urllib.query_escape(label)}' }
-	out := api.request('--paginate',
-		'repos/${api.repo}/issues?state=all&per_page=100${filter}',
-		'--jq', '.[] | [(.pull_request.html_url // .html_url), .number, (if .pull_request then "PR" else "issue" end), .state, .title] | @tsv')!
+	return 'repos/${api.repo}/issues?state=all&per_page=100${filter}'
+}
+
+const jq_issues = '.[] | [(.pull_request.html_url // .html_url), .number, (if .pull_request then "PR" else "issue" end), .state, .title] | @tsv'
+
+fn (api GitHub) issues(label string) ![][]string {
+	out := api.request('--paginate', api.issues_path(label), '--jq', jq_issues)!
 	return out.split_into_lines().filter(it != '').map(it.split('\t'))
+}
+
+fn (api GitHub) issue_page(label string, page int) !([][]string, bool) {
+	out := api.request('${api.issues_path(label)}&page=${page}', '--jq', jq_issues)!
+	rows := out.split_into_lines().filter(it != '').map(it.split('\t'))
+	return rows, rows.len == 100
 }
 
 struct AdvisoryCredits {
