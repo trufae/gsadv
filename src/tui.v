@@ -102,7 +102,10 @@ fn list_frame(layout TuiLayout, headers []string, body []string, footers []strin
 }
 
 fn tui_tabs(tabs []string, view int, width int) string {
-	for labels in [tabs, tabs.map(it.all_before(' '))] {
+	short := tabs.map(it.all_before(' '))
+	mut active := short.clone()
+	active[view] = tabs[view]
+	for labels in [tabs, active, short] {
 		line := labels.map(if it == labels[view] { term.inverse('[${it}]') } else { it }).join(' | ')
 		plain := term.strip_ansi(line)
 		if clip_line(plain, width) == plain { return line }
@@ -235,7 +238,8 @@ i: tag the selected item invalid locally (with a reason); I: remove the tag
 s: advisory status; m: actions menu; f/F: next/previous state filter in the current tab
 In issues/PRs/MRs, press f once from all to show only open items; each tab remembers its filter.
 /: filter the current list by text (Enter applies; empty clears; Esc cancels)
-l: change the shared issues/PRs/MRs label filter (empty shows all labels)
+l: change the shared issues/PRs/MRs label filter (empty shows all labels);
+   in commits, change the git log --grep regex (empty shows all commits)
 g: reload; A: cycle AI agent
 ?: this help; q or Ctrl+C: quit
 
@@ -841,6 +845,7 @@ fn tui(initial_api Repository, initial_label string) {
 	}
 	mut state_filters := [0, 0, 0, 0]
 	mut queries := ['', '', '', '']
+	mut grep := commit_grep()
 	mut screen := TuiScreen{}
 	raw()
 	loader.request(api, label, .commits, false)
@@ -969,7 +974,8 @@ fn tui(initial_api Repository, initial_label string) {
 		label_hint := if label == '' { 'all labels' } else { 'label: ${label}' }
 		issue_hint := if lists[2].state == 'all' { label_hint } else { '${lists[2].state}; ${label_hint}' }
 		pr_hint := if lists[3].state == 'all' { label_hint } else { '${lists[3].state}; ${label_hint}' }
-		mut tabs := ['${records_title} ${visible[0].len} (${lists[0].state})', 'commits ${visible[1].len}',
+		grep_hint := if grep == '' { 'all' } else { 'grep: ${grep}' }
+		mut tabs := ['${records_title} ${visible[0].len} (${lists[0].state})', 'commits ${visible[1].len} (${grep_hint})',
 			'issues ${visible[2].len} (${issue_hint})', '${prs_title} ${visible[3].len} (${pr_hint})']
 		repo_pending := loader.pending[int(TuiLoadKind.repository)]
 		for v in 0 .. tabs.len {
@@ -1003,6 +1009,8 @@ fn tui(initial_api Repository, initial_label string) {
 				'No matches. Press / to change or clear the text filter.'
 			} else if view == 0 {
 				'No entries. Press f/F to change the filter or g to reload.'
+			} else if view == 1 && grep != '' {
+				'No commits match ${grep}. Press l to change the commit filter (empty shows all) or n to enter a commit/URL.'
 			} else if view >= 2 {
 				'No entries. Press l to change the label filter, f/F for state or g to reload.'
 			} else {
@@ -1033,7 +1041,7 @@ fn tui(initial_api Repository, initial_label string) {
 		credit_hint := if api.provider == 'github' { ['C credits'] } else { []string{} }
 		screen.draw(list_frame(layout, headers, body, [filter_hint,
 			key_hints(['m actions', 'i invalid', 'I unmark', 'b similar bugs', ...credit_hint, 's status', ...actions, 'g reload', 'A agent'], width),
-			key_hints(['? help', 'q quit', 'tab/shift-tab views', '/ text', 'l label', 'f/F state', 'j/k/J/K move',
+			key_hints(['? help', 'q quit', 'tab/shift-tab views', '/ text', if view == 1 { 'l grep' } else { 'l label' }, 'f/F state', 'j/k/J/K move',
 			'enter view', 'e edit', 'r review', 'M comment', 'n new'], width)]), w, h)
 		mut k := ''
 		for {
@@ -1115,6 +1123,18 @@ fn tui(initial_api Repository, initial_label string) {
 			}
 			'l' {
 				screen.width = 0
+				if view == 1 {
+					text := tui_input('Commit filter (git log -E --grep). Enter applies; empty shows all commits; Esc cancels.',
+						'Grep: ', grep, false) or { continue }
+					next_grep := text.trim_space()
+					if next_grep == grep { continue }
+					grep = next_grep
+					os.setenv('GSADV_GREP', grep, true)
+					cms, loaded[1], changed[1] = [][]string{}, false, true
+					sel[1], top[1] = 0, 0
+					loader.request(api, label, .commits, true)
+					continue
+				}
 				if text := tui_input('Label filter for issues and PRs/MRs. Enter applies; empty shows all labels; Esc cancels.',
 					'Label: ', label, false) {
 					next_label := text.trim_space()

@@ -60,9 +60,14 @@ fn (api Repository) source(input string) !Source {
 		provider: api.provider, host: api.host}
 }
 
+// Commit subject regex for git log; empty lists all commits.
+fn commit_grep() string {
+	return setting('GREP') or { '##(crash|security|vulnerability|sandbox)' }
+}
+
 // Matching commits in the cwd checkout: sha, date, subject.
 fn commits() ![][]string {
-	grep := setting('GREP') or { '##(crash|security|vulnerability|sandbox)' }
+	grep := commit_grep()
 	mut args := ['git', 'log', '-n', '2000', '--format=%H%x09%as%x09%s']
 	if grep != '' { args << ['-E', '--grep=${grep}'] }
 	r := os.exec(args)

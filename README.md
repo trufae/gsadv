@@ -19,6 +19,11 @@ for closed items, or `F` to go back; GitLab MRs also have a merged filter. State
 filters are remembered separately for each tab and combine with `l` (label) and
 `/` (text) filters.
 
+The commits tab only lists commits whose message matches `GSADV_GREP`
+(default `##(crash|security|vulnerability|sandbox)`). In that tab, press `l` to
+change the `git log -E --grep` regex; an empty value shows all commits. Use
+`git config --local gsadv.grep ''` to show all commits by default in a repository.
+
 ## Install
 
 Requires `git` and [gh](https://cli.github.com) for GitHub or
