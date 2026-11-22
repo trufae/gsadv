@@ -64,6 +64,12 @@ fn interrupt_edit(_ os.Signal) {
 
 // Files survive aborts, editor failures and API errors. Reports are always kept.
 fn resume_edit(dir string, run_ai bool) ! {
+	continue_edit(dir, run_ai) or {
+		return error('${err}\nResume without AI: gsadv resume ${os.quoted_path(dir)}')
+	}
+}
+
+fn continue_edit(dir string, run_ai bool) ! {
 	session := json2.decode[EditSession](os.read_file(os.join_path(dir, 'session.json'))!)!
 	if session.kind !in ['new', 'review', 'edit', 'similar', 'source-review', 'comment'] || session.repo == ''
 		|| (session.kind != 'new' && session.id == '') {
@@ -81,7 +87,7 @@ fn resume_edit(dir string, run_ai bool) ! {
 	}
 	if session.kind == 'similar' {
 		if run_ai {
-			ask_ai(dir) or { return ai_error(dir, err.msg()) }
+			ask_ai(dir, false) or { return ai_error(dir, err.msg()) }
 		}
 		path := os.join_path(dir, 'reply.txt')
 		report := os.read_file(path)!
@@ -99,9 +105,9 @@ fn resume_edit(dir string, run_ai bool) ! {
 			os.write_file(proposed, orig)!
 		} else {
 			if run_ai {
-				ask_ai(dir) or { return ai_error(dir, err.msg()) }
+				ask_ai(dir, true) or { return ai_error(dir, err.msg()) }
 			}
-			notes, text := ai_reply(os.read_file(os.join_path(dir, 'reply.txt'))!) or {
+			notes, text := saved_ai_reply(dir) or {
 				return ai_error(dir, err.msg())
 			}
 			head := if orig.starts_with('#') { orig.all_before('\n') + '\n' } else { '' }
@@ -269,7 +275,7 @@ fn format_elapsed(seconds int) string {
 
 // Keep stdout on disk from the start so interruption cannot discard pipe buffers.
 // stderr is inherited; Claude's structured stdout needs a separate progress reader.
-fn ask_ai(dir string) ! {
+fn ask_ai(dir string, advisory bool) ! {
 	pf := os.join_path(dir, 'prompt.txt')
 	of := os.join_path(dir, 'reply.txt')
 	ai := setting('AI') or { agents[0] }
@@ -286,7 +292,7 @@ fn ask_ai(dir string) ! {
 	mut stopwatch := time.new_stopwatch()
 	process.run()
 	defer { process.close() }
-	mut stream := ClaudeStream{}
+	mut stream := ClaudeStream{advisory: advisory}
 	mut offset := u64(0)
 	mut next_update := 10
 	for {
@@ -314,7 +320,9 @@ fn ask_ai(dir string) ! {
 		return error('agent exited with status ${process.code}${detail}; output saved in ${log}')
 	}
 	if claude && (stream.failure != '' || !stream.finished) {
-		reason := if stream.failure != '' { stream.failure } else { 'Claude exited without a final result' }
+		reason := if stream.failure != '' { stream.failure } else if advisory {
+			'Claude exited without a final advisory'
+		} else { 'Claude exited without a final result' }
 		return error('${reason}; event log saved in ${log}')
 	}
 	seconds := int(stopwatch.elapsed().seconds())
@@ -361,6 +369,7 @@ struct ClaudeEvent {
 }
 
 struct ClaudeStream {
+	advisory bool
 mut:
 	pending string
 	finished bool
@@ -425,8 +434,11 @@ fn (mut stream ClaudeStream) event(line string, output string) ! {
 			if event.is_error {
 				return error('Claude failed: ${event.result} ${event.errors.join('; ')}'.trim_space())
 			}
-			// The first completed reply replaces the intermediate recovery text.
+			// A waiting turn can finish before a background build returns the advisory.
 			os.write_file(output, event.result)!
+			if stream.advisory {
+				_, _ := ai_reply(event.result) or { return }
+			}
 			stream.finished = true
 		}
 		else {}
@@ -757,6 +769,29 @@ fn ai_reply(out string) !(string, string) {
 	return out[..at].trim_space(), out[at..]
 }
 
+// Older versions could keep a waiting message instead of a later completed advisory.
+// Recover only successful top-level results, never tool output or partial messages.
+fn saved_ai_reply(dir string) !(string, string) {
+	path := os.join_path(dir, 'reply.txt')
+	out := os.read_file(path) or { '' }
+	if notes, text := ai_reply(out) {
+		return notes, text
+	}
+	log := os.join_path(dir, 'claude.jsonl')
+	for line in os.read_lines(log) or { []string{} } {
+		event := json2.decode[ClaudeEvent](line) or { continue }
+		if event.type != 'result' || event.is_error || event.parent_tool_use_id != none {
+			continue
+		}
+		notes, text := ai_reply(event.result) or { continue }
+		parse(text) or { continue }
+		os.write_file(path, event.result)!
+		eprintln('[gsadv] Recovered completed advisory from ${log}')
+		return notes, text
+	}
+	return ai_reply(out)
+}
+
 // unified diff of the whole text, preceded by free text notes
 fn udiff(notes string, a string, b string) !string {
 	fa := os.join_path(os.temp_dir(), 'gsadv-a-${os.getpid()}')
@@ -830,6 +865,16 @@ fn apply(orig string, patch string) !string {
 }
 
 fn cmd_new(api Repository, input string, ctx string) ! {
+	if input == '' {
+		template := advisory_template(api.repo.all_after_last('/'))
+		dir := start_edit(api, '', 'new', template, '')!
+		os.write_file(os.join_path(dir, 'notes.txt'), '')!
+		for name in ['proposed.md', 'edit.md'] {
+			os.write_file(os.join_path(dir, name), template)!
+		}
+		resume_edit(dir, false)!
+		return
+	}
 	s := api.source(input)!
 	evidence := api.source_text(s, true)!
 	existing := api.advisories('')!.map(it.join(' ')).join('\n')
@@ -909,7 +954,7 @@ fn resume_comment(dir string, session EditSession, run_ai bool) ! {
 	path := os.join_path(dir, 'edit.md')
 	if !os.exists(path) {
 		if session.kind == 'source-review' && run_ai {
-			ask_ai(dir) or { return ai_error(dir, err.msg()) }
+			ask_ai(dir, false) or { return ai_error(dir, err.msg()) }
 		}
 		name := if session.kind == 'comment' { 'original.md' } else { 'reply.txt' }
 		os.write_file(path, os.read_file(os.join_path(dir, name))!)!

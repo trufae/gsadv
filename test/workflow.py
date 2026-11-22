@@ -8,6 +8,7 @@ import json
 import os
 from pathlib import Path
 import re
+import shutil
 import signal
 import subprocess
 import sys
@@ -165,6 +166,66 @@ def setup(root):
 
 def payload(root):
     return json.loads((root / 'payload.json').read_text())
+
+
+def manual_checks(binary, root):
+    root.mkdir()
+    setup(root)
+    args = ['-r', 'owner/repo', 'new']
+    # Opening, cancelling and editor failure must not run AI or fetch source data.
+    for mode in ('', 'empty', 'fail'):
+        result, _ = run(binary, root, mode, args=args, GSADV_AI='false')
+        assert result.returncode == 0, result.stdout
+        assert 'Opening edit.md in editor' in result.stdout
+        assert 'No changes saved to the server' in result.stdout
+        assert not (root / 'ai.calls').exists()
+        assert not (root / 'gh.calls').exists()
+        template = (root / 'editor-buffer').read_text()
+        assert 'summary:\n' in template and 'credits:\n' in template
+        assert 'package: repo\n' in template and 'affected:\n' in template
+        for section in ('Impact', 'Details', 'Proof of concept', 'Patches',
+                        'Workarounds', 'References', 'Acknowledgements'):
+            assert f'## {section}\n' in template, template
+        directory = saved_dir(result.stdout)
+        assert (directory / 'original.md').read_text() == template
+        if mode == 'fail':
+            # Resume and paste a whole advisory over the template.
+            result, _ = run(binary, root, 'manual', args=['resume', str(directory)],
+                            GSADV_AI='false')
+            assert result.returncode == 0, result.stdout
+            assert payload(root)['summary'] == 'Manual'
+            assert payload(root)['description'] == 'Resolved by hand'
+            calls = [json.loads(line) for line in (root / 'gh.calls').read_text().splitlines()]
+            assert len(calls) == 1 and calls[0][calls[0].index('--method') + 1] == 'POST', calls
+            assert not directory.exists()
+        else:
+            shutil.rmtree(directory)
+
+    # N opens the editor from every tab, including an empty selection.
+    env = {'GSADV_AI': 'false', 'EDITOR': 'editor', 'EDITOR_MODE': 'empty'}
+    before = (root / 'payload.json').read_text()
+    (root / 'saved.json').unlink(missing_ok=True)
+    with Terminal(binary, root, 'tui', env, controlling=True) as ui:
+        ui.expect('Test advisory')
+        ui.send('/')
+        ui.expect('Filter text:')
+        ui.send('nothing-matches-this\n')
+        ui.expect('No matches.')
+        for next_view in ('commits', 'issues', 'PRs', 'advisories'):
+            ui.send('N')
+            screen = ui.expect('Press Enter to return')
+            assert 'Opening edit.md in editor' in screen, screen
+            assert 'commit or issue/PR URL' not in screen, screen
+            assert 'summary:\n' in (root / 'editor-buffer').read_text()
+            shutil.rmtree(saved_dir(screen.replace('\r', '')))
+            ui.send('\n')
+            ui.expect('N manual draft')
+            ui.send('\t')
+            ui.expect('[' + next_view + ' ')
+        ui.send('q')
+        ui.finish()
+    assert not (root / 'ai.calls').exists()
+    assert (root / 'payload.json').read_text() == before
 
 
 def github_patch_checks(binary, root):
@@ -523,8 +584,29 @@ https://github.com/owner/repo/commit/abcdef1234'''
     assert 'Saved changes to' not in result.stdout
     directory = saved_dir(result.stdout)
     assert (directory / 'reply.txt').read_text() == REPLY
+    assert result.stdout.rstrip().endswith(f"Resume without AI: gsadv resume '{directory}'")
     result, env = run(binary, root, args=['resume', str(directory)])
     assert result.returncode == 0, result.stdout
+
+    # Older Claude logs can contain a completed advisory after a waiting result.
+    for missing in (False, True):
+        (root / 'reply').write_text('Waiting for the background build.\n')
+        result, _ = run(binary, root, AI_EXIT='1')
+        assert result.returncode != 0, result.stdout
+        directory = saved_dir(result.stdout)
+        if missing:
+            (directory / 'reply.txt').unlink()
+        events = [dict(type='result', is_error=False, result='Waiting for the background build.'),
+                  dict(type='result', is_error=False, result=REPLY),
+                  dict(type='result', is_error=False, result='A later background notice.')]
+        (directory / 'claude.jsonl').write_text('\n'.join(map(json.dumps, events)) + '\n')
+        ai_calls = (root / 'ai.calls').read_text()
+        result, _ = run(binary, root, args=['resume', str(directory)], GSADV_AI='false')
+        assert result.returncode == 0, result.stdout
+        assert 'Recovered completed advisory from' in result.stdout
+        assert payload(root)['summary'] == 'Revised'
+        assert (root / 'ai.calls').read_text() == ai_calls
+        assert not directory.exists()
 
     # Ctrl+C while generating leaves partial output and gives a clean exit status.
     (root / 'reply').write_text('partial expensive analysis\n')
@@ -593,4 +675,5 @@ if __name__ == '__main__':
         checks(binary, Path(tmp))
         tui_checks(binary, Path(tmp))
         github_patch_checks(binary, Path(tmp) / 'patches')
+        manual_checks(binary, Path(tmp) / 'manual')
     print('Workflow recovery checks passed')

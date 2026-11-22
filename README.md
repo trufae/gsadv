@@ -11,6 +11,10 @@ disclosures, written in [V](https://vlang.io).
   issues on GitLab.
 
 Run `gsadv` inside a repository to open the terminal UI.
+Press `N` to write a draft by hand in `$EDITOR`, starting from an advisory template.
+Fill in the fields and sections or paste a complete advisory; leaving the template
+unchanged or emptying it cancels. `gsadv new` opens the same template from the CLI.
+Lowercase `n` and `gsadv new <commit|url>` draft with AI.
 Use `J`/`K` or AvPág/RePág (Page Down/Page Up) to move down/up ten rows.
 Press `l` to change the shared issue/PR/MR label filter; an empty value shows all
 labels. Results appear page by page while the remaining history loads in the
@@ -41,8 +45,11 @@ set `GSADV_AI` to use another agent command.
 Agent progress and completion messages show elapsed time in hours, minutes and
 seconds, for example `1h 7m 30s`.
 
-Claude's first completed response is kept even if background tasks emit later
-follow-up messages. The full conversation remains in the saved transcript.
+For advisory drafts and reviews, Claude's first completed advisory is kept even if
+background tasks emit later follow-up messages. Waiting messages do not replace it.
+The full conversation remains in the saved transcript. Failures include a copyable
+`gsadv resume <directory>` command; resuming automatically restores a completed
+advisory from that transcript if `reply.txt` is missing or contains no advisory.
 
 Commit and PR analysis accepts patches containing literal terminal escape bytes,
 such as terminal output test fixtures.

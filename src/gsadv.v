@@ -19,6 +19,7 @@ const help = 'Usage: gsadv [-r namespace/repo|url] [--provider github|gitlab] [-
   ls [state]               GitHub advisories or GitLab disclosure issues (opened/closed)
   log                     list matching commits and their advisories
   issues [label]           list issues/PRs (default label: GSADV_LABEL or cve)
+  new                     write a draft by hand in \$EDITOR from a template
   new <commit|url> [context] analyze a commit, issue or PR/MR with AI and create a draft
   show <id>               print advisory
   status <id>             show lifecycle, CVE and private report details
@@ -110,7 +111,7 @@ fn main() {
 		eprintln('cannot select repository: ${err}')
 		exit(1)
 	}
-	if cmd !in ['ls', 'log', 'issues'] && id == '' {
+	if cmd !in ['ls', 'log', 'issues', 'new'] && id == '' {
 		eprintln(help)
 		exit(1)
 	}

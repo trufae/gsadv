@@ -88,7 +88,7 @@ fn test_claude_completed_reply_survives_background_results() ! {
 	defer { os.rmdir_all(dir) or {} }
 	path := os.join_path(dir, 'reply.txt')
 	os.write_file(path, 'Checking the fix\n')!
-	mut stream := ClaudeStream{}
+	mut stream := ClaudeStream{advisory: true}
 	stream.feed('{"type":"result","parent_tool_use_id":"child","is_error":false,"result":"child notes"}\n', path, false)
 	assert !stream.finished
 	assert os.read_file(path)! == 'Checking the fix\n'
@@ -110,6 +110,76 @@ fn test_claude_completed_reply_survives_background_results() ! {
 	notes, text := ai_reply(os.read_file(path)!)!
 	assert notes == 'Review notes'
 	assert parse(text)!.summary == 'Final'
+}
+
+fn test_claude_waiting_result_does_not_hide_completed_advisory() ! {
+	dir := start_edit(GitHub{repo: 'owner/repo'}, '', 'new', '', '')!
+	defer { os.rmdir_all(dir) or {} }
+	path := os.join_path(dir, 'reply.txt')
+	mut stream := ClaudeStream{advisory: true}
+	waiting := "I'll continue once the build notification arrives."
+	stream.feed('{"type":"result","is_error":false,"result":${json2.encode(waiting)}}\n', path, false)
+	assert !stream.finished
+	assert os.read_file(path)! == waiting
+	final := 'Verified with ASAN\nsummary: Final\nseverity: low\n---\nReproduced and fixed\n'
+	stream.feed('{"type":"assistant","message":{"content":[{"type":"text","text":${json2.encode(final)}}]}}\n', path, false)
+	stream.feed('{"type":"result","is_error":false,"result":${json2.encode(final)}}\n', path, false)
+	assert stream.finished
+	assert stream.failure == ''
+	assert os.read_file(path)! == final
+	stream.feed('{"type":"result","is_error":false,"result":"background notice"}\n', path, true)
+	assert os.read_file(path)! == final
+}
+
+fn test_saved_reply_automatically_recovers_completed_advisory() ! {
+	dir := start_edit(GitHub{repo: 'owner/repo'}, '', 'new', '', '')!
+	defer { os.rmdir_all(dir) or {} }
+	path := os.join_path(dir, 'reply.txt')
+	final := 'Verified with ASAN\nsummary: Final\nseverity: low\n---\nReproduced and fixed\n'
+	log := os.join_path(dir, 'claude.jsonl')
+	os.write_file(log, [
+		'{"type":"result","is_error":false,"result":"Waiting for build"}',
+		'{"type":"result","parent_tool_use_id":"child","result":${json2.encode('summary: Child\n---\nChild notes\n')}}',
+		'{"type":"result","is_error":true,"result":${json2.encode('summary: Failed\n---\nFailed reply\n')}}',
+		'{"type":"result","result":${json2.encode('summary: Incomplete')}}',
+		'{"type":"result","is_error":false,"result":${json2.encode(final)}}',
+		'{"type":"result","result":${json2.encode('summary: Later\n---\nLater reply\n')}}',
+		'{"type":',
+	].join('\n'))!
+	// A missing reply, an empty reply and an old waiting message all recover.
+	for i in 0 .. 3 {
+		if i > 0 { os.write_file(path, if i == 1 { '' } else { 'Waiting for build' })! }
+		notes, text := saved_ai_reply(dir)!
+		assert notes == 'Verified with ASAN'
+		assert parse(text)!.summary == 'Final'
+		assert os.read_file(path)! == final
+	}
+	// Keep an existing user-repaired reply instead of replacing it from the log.
+	manual := 'summary: Manual\n---\nReviewed by hand\n'
+	os.write_file(path, manual)!
+	_, text := saved_ai_reply(dir)!
+	assert text == manual
+	assert os.read_file(path)! == manual
+}
+
+fn test_resume_error_includes_command_and_preserves_partial_evidence() ! {
+	dir := start_edit(GitHub{repo: 'owner/repo'}, '', 'new', '', '')!
+	defer { os.rmdir_all(dir) or {} }
+	path := os.join_path(dir, 'reply.txt')
+	os.write_file(path, 'Waiting for build')!
+	partial := 'summary: Partial\n---\nNo successful result\n'
+	os.write_file(os.join_path(dir, 'claude.jsonl'), [
+		'{"type":"assistant","message":{"content":[{"type":"text","text":${json2.encode(partial)}}]}}',
+		'{"type":"result","is_error":true,"result":${json2.encode(partial)}}',
+	].join('\n'))!
+	if _ := resume_edit(dir, false) {
+		assert false, 'accepted a partial or failed advisory'
+	} else {
+		assert err.msg().contains('no advisory in saved reply.txt')
+		assert err.msg().ends_with('Resume without AI: gsadv resume ${os.quoted_path(dir)}')
+	}
+	assert os.read_file(path)! == 'Waiting for build'
+	assert !os.exists(os.join_path(dir, 'proposed.md'))
 }
 
 fn test_claude_errors_retain_partial_reply() ! {

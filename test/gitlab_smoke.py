@@ -302,6 +302,21 @@ def main():
             if Path(recovery).exists():
                 shutil.rmtree(recovery)
         assert calls()[-1]['client'] == 'glab' and calls()[-1]['host'] == 'gitlab.com'
+        # A manual draft can be pasted and saved without fetching a source or running AI.
+        manual = root / 'manual.md'
+        manual.write_text('summary: Manual disclosure\nseverity: low\ncwe: CWE-125\ncredits:\n'
+                          'package: parser\necosystem: other\naffected: < 2\npatched: 2\n---\n'
+                          'Written by hand.\n')
+        count = len(calls())
+        editor = f'cp {shlex.quote(str(manual))}'
+        output = run('new', overrides={'EDITOR': editor, 'GSADV_AI': 'false'})
+        assert 'Opening edit.md' in output
+        written = calls()[count:]
+        assert len(written) == 1 and written[0]['method'] == 'POST', written
+        assert written[0]['payload']['confidential'] is True
+        created = next(i for i in json.loads((root / 'issues.json').read_text()).values()
+                       if i['title'] == 'Manual disclosure')
+        assert created['confidential'] is True and 'Written by hand.' in created['description']
         assert '403' in run('ls', expected=1, overrides={'FAIL_API': '1'})
         assert 'not this host' in run('--provider', 'gitlab', '-r', 'https://code.example/group/sub/repo', 'cve', 'GL-42')
         assert calls()[-1]['host'] == 'code.example'

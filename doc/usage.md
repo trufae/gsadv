@@ -11,6 +11,7 @@ gsadv [-r namespace/repo|url] [--provider github|gitlab] [--host hostname] [--re
   ls [state]               GitHub advisories or GitLab disclosure issues (opened/closed)
   log                     list tagged fix commits and their advisories
   issues [label]           list labeled issues/PRs (default: GSADV_LABEL or cve)
+  new                     write a draft by hand in $EDITOR from a template
   new <commit|url> [context] analyze a commit, issue or PR/MR with AI and create a draft
   show <id>               print advisory
   status <id>             show lifecycle, CVE and private report details
@@ -102,6 +103,12 @@ gsadv log
 ```
 
 ### new
+
+`gsadv new` opens a manual advisory template in `$EDITOR`, as does `N` in the TUI.
+Fill in the metadata and Markdown sections or paste a complete advisory in the
+[editable format](advisory-format.md). Leaving the template unchanged or emptying it
+cancels. Saving creates a draft through the usual provider workflow, with recovery
+files available if the editor or save fails. No AI or source argument is needed.
 
 `gsadv new <commit|url> [context]` sends the source and your optional context to the AI
 agent, opens the resulting advisory in `$EDITOR`, and creates a draft when you save.

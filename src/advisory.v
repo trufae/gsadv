@@ -14,6 +14,51 @@ patched: <first patched version, e.g. 5.9.8>
 ---
 <markdown description: Impact, Details (root cause), Proof of concept, Patches, References>'
 
+fn advisory_template(name string) string {
+	return '# Fill in the fields and sections below, or paste a complete advisory in this format.
+# Save and close to create a draft; leave unchanged or empty the file to cancel.
+# severity: low, medium, high or critical. A CVSS:3.1/... vector overrides severity.
+# cwe: CWE-nnn, ...; credits: login:finder, login:reporter, login:remediation_developer
+summary:
+severity:
+cvss:
+cwe:
+credits:
+package: ${name}
+ecosystem: other
+affected:
+patched:
+---
+## Impact
+
+<Who is affected, attack preconditions, impact and its limits.>
+
+## Details
+
+<Root cause, affected functions and when the vulnerable code was introduced.>
+
+## Proof of concept
+
+<Reproduction steps, input or commands, and observed results.>
+
+## Patches
+
+<Fix commits and the first patched release, or explain what is unknown.>
+
+## Workarounds
+
+<Available mitigations, or state that none are known.>
+
+## References
+
+<Links to the report, fix, related advisories and any assigned CVE.>
+
+## Acknowledgements
+
+<Verified finder, reporter, fix author and tool attribution.>
+'
+}
+
 struct Pkg {
 	ecosystem string
 	name      string

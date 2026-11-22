@@ -17,6 +17,13 @@ patched: 6.2.2
 markdown description
 ```
 
+Press `N` in the TUI or run `gsadv new` to open a manual template in `$EDITOR`.
+It includes these fields and Markdown sections for Impact, Details, Proof of concept,
+Patches, Workarounds, References and Acknowledgements. Fill in the blanks or replace
+the buffer with a complete advisory in this format. Leaving the template unchanged
+or emptying it cancels. Saving a completed advisory creates a draft on GitHub or a
+confidential disclosure on GitLab; `gsadv resume <directory>` reopens interrupted work.
+
 ## Rules
 
 - `#` lines before `---` are editor comments and are not saved to the provider. After `---`,

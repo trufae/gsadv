@@ -37,11 +37,16 @@ Arguments are JSON-quoted so multiline commands and control characters remain
 readable, with each argument preview limited to 1,000 characters. File contents
 and replacement text are omitted from progress. The full raw events are saved
 in `claude.jsonl`; completed top-level text messages are saved in `reply.txt` as
-recovery text while Claude works. On success,
-the final result replaces that text, so JSON events, tool output and subagent
-messages never enter the advisory. A failed or incomplete stream stops the workflow
-before opening the editor or saving to the provider. Both files survive errors
-and interruptions; `claude.jsonl` can help repair `reply.txt` before `gsadv resume`.
+recovery text while Claude works. For advisory drafts and reviews, gsadv waits for
+the first result containing an advisory, skipping earlier waiting messages from
+background builds. On success, the final result replaces that text, so JSON events,
+tool output and subagent messages never enter the advisory. A failed or incomplete
+stream stops the workflow before opening the editor or saving to the provider. Both files survive errors
+and interruptions. Every workflow error includes the exact `gsadv resume` command.
+When resuming a draft or advisory review, gsadv automatically repairs a missing or
+non-advisory `reply.txt` from the first successful top-level result containing a
+parseable advisory in `claude.jsonl`. Partial messages and failed results remain
+evidence for manual recovery; they are never automatically used as an advisory.
 Successful advisory saves clean up both files; similar-bug reports retain them.
 
 When the agent fails without a final result, `reply.txt` can be empty — for example

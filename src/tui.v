@@ -229,7 +229,8 @@ fn input_line(prompt string, text string, width int) string {
 
 const tui_help = 'tab/shift-tab: next/previous view (advisories/commits/issues/PRs or MRs)
 j/k or mouse wheel: move; J/K or PgDn/PgUp (AvPág/RePág): move ten rows
-enter: view advisory/commit/issue/PR; e: edit advisory; r: AI review selected item; n: new draft
+enter: view advisory/commit/issue/PR; e: edit advisory; r: AI review selected item; n: AI draft
+N: write a draft manually from a template in \$EDITOR
 M: edit and post a discussion comment on the selected issue/PR/MR
 b: find similar bugs using the selected advisory or source as a template
 C: manage advisory credits (finder, reporter, fix developer and other roles)
@@ -475,6 +476,10 @@ fn run(k string, api Repository, id string, input string) ! {
 				if !similar_tui(api, input)! { return }
 				action_input('Press Enter to return (Ctrl+C/Esc also returns): ') or {}
 			}
+		}
+		'N' {
+			tui_workflow(api, 'new')!
+			action_input('Press Enter to return (Ctrl+C/Esc also returns): ') or {}
 		}
 		'n' {
 			args := if input != '' {
@@ -1033,7 +1038,7 @@ fn tui(initial_api Repository, initial_label string) {
 			visibility := if advs[ai].len > 7 && advs[ai][7] != '' { advs[ai][7] + ' | ' } else { '' }
 			if view == 0 { release_hint(advs[ai]) + ' | ' } else { '' } + '${id} | ${advs[ai][1]} | ${visibility}${cve}'
 		} else {
-			'No advisory selected; n creates a draft from a commit, issue or PR'
+			'No advisory selected; N writes a draft manually; n drafts from a commit, issue or PR'
 		}
 		filter_hint := if queries[view] == '' { hint } else { '/${queries[view]} | ${hint}' }
 		mut headers := [term.bold(header), term.bold(tab_line), term.dim(marked_row(columns, '', w))]
@@ -1041,7 +1046,7 @@ fn tui(initial_api Repository, initial_label string) {
 		if layout.head == 1 { headers[0] = headers[1] }
 		credit_hint := if api.provider == 'github' { ['C credits'] } else { []string{} }
 		screen.draw(list_frame(layout, headers, body, [filter_hint,
-			if reason != '' { invalid_note } else { key_hints(['m actions', 'i invalid', 'I unmark', 'b similar bugs', ...credit_hint, 's status', ...actions, 'g reload', 'A agent'], width) },
+			if reason != '' { invalid_note } else { key_hints(['m actions', 'N manual draft', 'i invalid', 'I unmark', 'b similar bugs', ...credit_hint, 's status', ...actions, 'g reload', 'A agent'], width) },
 			key_hints(['? help', 'q quit', 'tab/shift-tab views', '/ text', if view == 1 { 'l grep' } else { 'l label' }, 'f/F state', 'j/k/J/K move',
 			'enter view', 'e edit', 'r review', 'M comment', 'n new'], width)]), w, h)
 		mut k := ''
@@ -1065,15 +1070,15 @@ fn tui(initial_api Repository, initial_label string) {
 			}
 			source_menu := if input == '' { '' } else { 'r AI review selected source\n' + if view >= 2 { 'M post discussion comment\n' } else { '' } }
 			k = tui_dialog('Actions for ${target}\n${hint}' + if reason == '' { '' } else { '\n${invalid_note}' } + '\n\n${advisory_menu}' +
-				source_menu + 'i mark invalid locally / edit reason\nI remove local invalid tag\nb Find similar bugs\n\nChoose a key; Enter/Esc cancels.')
+				source_menu + 'N write a draft manually\ni mark invalid locally / edit reason\nI remove local invalid tag\nb Find similar bugs\n\nChoose a key; Enter/Esc cancels.')
 			if k == 'v' {
 				k = '\n'
 				show_input = ''
-			} else if k !in ['s', 'e', 'r', 'b', 'C', 'M', 'i', 'I'] && !actions.any(it.starts_with(k + ' ')) {
+			} else if k !in ['s', 'e', 'r', 'b', 'C', 'M', 'i', 'I', 'N'] && !actions.any(it.starts_with(k + ' ')) {
 				continue
 			}
 		}
-		if pending_action != '' && k in ['q', '\x03', 'a', 'c', 'd', 'p', 'x', 'e', 'r', 'n', 'C', 'M', 'b', '\n', '\r'] {
+		if pending_action != '' && k in ['q', '\x03', 'a', 'c', 'd', 'p', 'x', 'e', 'r', 'n', 'N', 'C', 'M', 'b', '\n', '\r'] {
 			continue
 		}
 		match k {
@@ -1190,14 +1195,14 @@ fn tui(initial_api Repository, initial_label string) {
 				}
 				changed = [true, true, true, true]
 			}
-			'\n', '\r', 'e', 'r', 'b', 'n', 's', 'C', 'M', '?' {
+			'\n', '\r', 'e', 'r', 'b', 'n', 'N', 's', 'C', 'M', '?' {
 				if api.repo == '' && k != '?' && !(view == 1 && k in ['\n', '\r']) {
 					status = 'Repository unavailable; wait for loading or press g to retry'
 					continue
 				}
 				if k == 'M' && view < 2 { status = 'select an issue/PR/MR to comment'; continue }
 				if id == '' && (k in ['e', 's', 'C'] || (k in ['\n', '\r', 'b', 'r', 'M'] && input == '')) {
-					status = 'no advisory selected; press n to create a draft'
+					status = 'no advisory selected; press N for a manual draft or n for AI'
 					continue
 				}
 				screen.width = 0

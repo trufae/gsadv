@@ -55,6 +55,7 @@ Keys:
 | `tab` / `shift-tab` | cycle views forward / backward, wrapping at either end and selecting a linked entry in the destination view when one exists |
 | `enter` | show the commit (`git show`), advisory or issue/PR discussion (`r2` Markdown rendering if available, otherwise `$PAGER`) |
 | `n` | draft from the selected commit or issue/PR; in the advisory view, prompt for a commit or URL and optional context |
+| `N` | write a draft manually in `$EDITOR` from a template; no AI or source selection needed |
 | `e` | edit the linked advisory |
 | `r` | AI-review the selected advisory or source, including sources without a linked advisory |
 | `M` | compose a discussion comment on the selected issue/PR/MR, then confirm posting |
