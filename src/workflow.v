@@ -394,7 +394,7 @@ fn (mut stream ClaudeStream) event(line string, output string) ! {
 		'assistant' {
 			for block in event.message.content {
 				if block.type == 'text' && block.text != '' {
-					if event.parent_tool_use_id == none {
+					if event.parent_tool_use_id == none && !stream.finished {
 						mut file := os.open_append(output)!
 						file.write_string(block.text + '\n') or { file.close(); return err }
 						file.close()
@@ -406,10 +406,12 @@ fn (mut stream ClaudeStream) event(line string, output string) ! {
 			}
 		}
 		'result' {
+			// Background tasks can produce another turn after the main reply is complete.
+			if event.parent_tool_use_id != none || stream.finished { return }
 			if event.is_error {
 				return error('Claude failed: ${event.result} ${event.errors.join('; ')}'.trim_space())
 			}
-			// The final result is authoritative; intermediate messages are only recovery text.
+			// The first completed reply replaces the intermediate recovery text.
 			os.write_file(output, event.result)!
 			stream.finished = true
 		}

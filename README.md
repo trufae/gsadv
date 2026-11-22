@@ -38,6 +38,9 @@ Requires `git` and [gh](https://cli.github.com) for GitHub or
 `gh auth login` or `glab auth login`. AI features use Claude by default;
 set `GSADV_AI` to use another agent command.
 
+Claude's first completed response is kept even if background tasks emit later
+follow-up messages. The full conversation remains in the saved transcript.
+
 Commit and PR analysis accepts patches containing literal terminal escape bytes,
 such as terminal output test fixtures.
 

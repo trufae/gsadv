@@ -65,7 +65,13 @@ def stub():
         if mode == 'error':
             print(json.dumps({'type': 'result', 'is_error': True, 'errors': ['fixture failure']}), flush=True)
             return
-        print(json.dumps({'type': 'result', 'is_error': False, 'result': reply}), end='', flush=True)
+        print(json.dumps({'type': 'result', 'is_error': False, 'result': reply}), end='\n' if mode == 'background' else '', flush=True)
+        if mode == 'background':
+            notice = 'A background lookup hit its time limit. The advisory above stands as written.'
+            print(json.dumps({'type': 'system', 'subtype': 'task_notification', 'status': 'stopped'}), flush=True)
+            print(json.dumps({'type': 'assistant', 'parent_tool_use_id': None,
+                              'message': {'content': [{'type': 'text', 'text': notice}]}}), flush=True)
+            print(json.dumps({'type': 'result', 'is_error': False, 'result': notice}), end='', flush=True)
     else:
         print(reply, end='', flush=True)
     if mode == 'nonzero':
@@ -166,6 +172,7 @@ def main():
 
         check(save=True)  # Unset GSADV_AI uses Claude streaming and cleans up the raw log.
         check('claude -p')
+        check('claude -p', 'background')
         for mode in ('missing', 'malformed', 'error', 'nonzero', 'interrupt'):
             check('claude -p', mode)
         check('codex exec -')

@@ -83,6 +83,35 @@ fn test_claude_progress_keeps_text_separate_from_events() ! {
 	assert os.read_file(path)! == final
 }
 
+fn test_claude_completed_reply_survives_background_results() ! {
+	dir := start_edit(GitHub{repo: 'owner/repo'}, 'GHSA-test', 'review', '', '')!
+	defer { os.rmdir_all(dir) or {} }
+	path := os.join_path(dir, 'reply.txt')
+	os.write_file(path, 'Checking the fix\n')!
+	mut stream := ClaudeStream{}
+	stream.feed('{"type":"result","parent_tool_use_id":"child","is_error":false,"result":"child notes"}\n', path, false)
+	assert !stream.finished
+	assert os.read_file(path)! == 'Checking the fix\n'
+	final := 'Review notes\nsummary: Final\nseverity: low\n---\nVerified details\n'
+	stream.feed('{"type":"result","is_error":false,"result":${json2.encode(final)}}\n', path, false)
+	assert stream.finished
+	assert os.read_file(path)! == final
+	notice := 'A background lookup hit its time limit. The advisory above stands as written.'
+	stream.feed('{"type":"system","subtype":"task_notification","status":"stopped"}\n', path, false)
+	stream.feed('{"type":"assistant","parent_tool_use_id":null,"message":{"content":[{"type":"text","text":${json2.encode(notice)}}]}}\n', path, false)
+	assert os.read_file(path)! == final
+	for result in [notice, '', 'summary: Later\n---\nA later turn\n'] {
+		stream.feed('{"type":"result","is_error":false,"result":${json2.encode(result)}}\n', path, false)
+		assert os.read_file(path)! == final
+	}
+	stream.feed('{"type":"result","is_error":true,"errors":["background failure"]}', path, true)
+	assert stream.failure == ''
+	assert os.read_file(path)! == final
+	notes, text := ai_reply(os.read_file(path)!)!
+	assert notes == 'Review notes'
+	assert parse(text)!.summary == 'Final'
+}
+
 fn test_claude_errors_retain_partial_reply() ! {
 	dir := start_edit(GitHub{repo: 'owner/repo'}, 'GHSA-test', 'review', '', '')!
 	defer { os.rmdir_all(dir) or {} }
