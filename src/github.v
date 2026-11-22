@@ -52,7 +52,7 @@ const jq_advisories = '.[] | [
 
 fn (api GitHub) source_text(s Source, with_patch bool) !string {
 	if s.kind == 'commit' {
-		patch := api.request('-H', 'Accept: application/vnd.github.patch', 'repos/${api.repo}/commits/${s.ref}')!
+		patch := api.patch('repos/${api.repo}/commits/${s.ref}')!
 		return patch#[..200000]
 	}
 	endpoint := if s.kind == 'pull' { 'pulls' } else { 'issues' }
@@ -61,10 +61,19 @@ fn (api GitHub) source_text(s Source, with_patch bool) !string {
 		'--jq', '.[] | "### @\\(.user.login)\n\\(.html_url)\n\n\\(.body // "")\n"')!
 	text += '\n## Discussion\n${comments}'
 	if s.kind == 'pull' && with_patch {
-		patch := api.request('-H', 'Accept: application/vnd.github.patch', 'repos/${api.repo}/pulls/${s.ref}')!
+		patch := api.patch('repos/${api.repo}/pulls/${s.ref}')!
 		text += '\nPR patch:\n${patch#[..200000]}'
 	}
 	return text
+}
+
+fn (api GitHub) patch(path string) !string {
+	// Capture patches as evidence, preserving literal escape bytes in source fixtures.
+	return api.request('--allow-escape-sequences', '-H', 'Accept: application/vnd.github.patch', path) or {
+		// Older gh versions predate the flag and already return patches verbatim.
+		if !err.msg().starts_with('unknown flag: --allow-escape-sequences') { return err }
+		api.request('-H', 'Accept: application/vnd.github.patch', path)!
+	}
 }
 
 fn (api GitHub) advisory(id string) !string {

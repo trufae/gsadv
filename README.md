@@ -31,6 +31,9 @@ Requires `git` and [gh](https://cli.github.com) for GitHub or
 `gh auth login` or `glab auth login`. AI features use Claude by default;
 set `GSADV_AI` to use another agent command.
 
+Commit and PR analysis accepts patches containing literal terminal escape bytes,
+such as terminal output test fixtures.
+
 Download an archive from [Releases](https://github.com/trufae/gsadv/releases),
 extract it, and place the `gsadv` executable in a directory on your `PATH`.
 

@@ -21,6 +21,7 @@ from credits import Terminal
 ORIGINAL = '# GHSA-test draft\nsummary: Original\nseverity: high\n---\nBefore\n'
 REPLY = 'Review notes\nsummary: Revised\nseverity: high\n---\nAfter\n'
 MANUAL = 'summary: Manual\nseverity: low\n---\nResolved by hand\n'
+PATCH = 'diff --git a/test.c b/test.c\n--- a/test.c\n+++ b/test.c\n@@ -1 +1 @@\n-"\x1b[31m"\n+"\x1b[32m"\n'
 STUB = '''#!/usr/bin/env python3
 import json, os, signal, subprocess, sys, time
 from pathlib import Path
@@ -30,7 +31,22 @@ if name == 'gh':
     args = sys.argv[1:]
     with (root / 'gh.calls').open('a') as f:
         f.write(json.dumps(args) + '\\n')
-    if '--input' in args:
+    patch_mode = os.environ.get('GH_PATCH_MODE')
+    is_patch = 'Accept: application/vnd.github.patch' in args
+    if patch_mode and not is_patch:
+        assert '--allow-escape-sequences' not in args, args
+    if patch_mode and is_patch:
+        if patch_mode == 'legacy' and '--allow-escape-sequences' in args:
+            print('unknown flag: --allow-escape-sequences\\n\\nUsage: gh api <endpoint> [flags]', file=sys.stderr)
+            sys.exit(1)
+        if patch_mode == 'fail':
+            print('HTTP 404: Not Found', file=sys.stderr)
+            sys.exit(1)
+        if patch_mode != 'legacy' and '--allow-escape-sequences' not in args:
+            print('the response contains terminal escape sequences; pass --allow-escape-sequences to output it anyway', file=sys.stderr)
+            sys.exit(1)
+        print((root / 'patch').read_text(), end='')
+    elif '--input' in args:
         payload = Path(args[args.index('--input') + 1]).read_text()
         (root / 'payload.json').write_text(payload)
         if (root / 'fail-api').exists():
@@ -149,6 +165,54 @@ def setup(root):
 
 def payload(root):
     return json.loads((root / 'payload.json').read_text())
+
+
+def github_patch_checks(binary, root):
+    root.mkdir()
+    setup(root)
+    (root / 'patch').write_text(PATCH)
+    for mode in ('current', 'legacy'):
+        for source in ('abcdef1234', 'https://github.com/owner/repo/pull/42'):
+            (root / 'gh.calls').write_text('')
+            result, _ = run(binary, root, mode='empty', GH_PATCH_MODE=mode,
+                            args=['-r', 'owner/repo', 'new', source])
+            assert result.returncode == 0, result.stdout
+            prompt = json.loads((root / 'ai.prompts').read_text().splitlines()[-1])
+            assert PATCH in prompt, repr(prompt)
+            assert (saved_dir(result.stdout) / 'prompt.txt').read_text() == prompt
+            calls = [json.loads(line) for line in (root / 'gh.calls').read_text().splitlines()]
+            patches = [args for args in calls if 'Accept: application/vnd.github.patch' in args]
+            assert len(patches) == (2 if mode == 'legacy' else 1), patches
+            assert '--allow-escape-sequences' in patches[0], patches
+            if mode == 'legacy':
+                assert '--allow-escape-sequences' not in patches[1], patches
+            assert not any('--input' in args for args in calls), calls
+
+    # Other API errors must propagate without retrying or starting the AI.
+    (root / 'gh.calls').write_text('')
+    ai_calls = (root / 'ai.calls').read_text()
+    result, _ = run(binary, root, GH_PATCH_MODE='fail',
+                    args=['-r', 'owner/repo', 'new', 'abcdef1234'])
+    assert result.returncode != 0 and 'HTTP 404: Not Found' in result.stdout, result.stdout
+    assert len((root / 'gh.calls').read_text().splitlines()) == 1
+    assert (root / 'ai.calls').read_text() == ai_calls
+
+    # Exercise the reported n-key path through the CLI child in a real PTY.
+    env = {'GSADV_AI': 'ai', 'EDITOR': 'editor', 'EDITOR_MODE': 'empty',
+           'GH_PATCH_MODE': 'current'}
+    with Terminal(binary, root, 'tui', env, controlling=True) as ui:
+        ui.expect('Test advisory')
+        ui.expect('C credits')
+        ui.send('n')
+        ui.expect('commit or issue/PR URL')
+        ui.send('abcdef1234\n')
+        screen = ui.expect('Press Enter to return')
+        assert 'Workflow exited' not in screen, screen
+        assert PATCH in json.loads((root / 'ai.prompts').read_text().splitlines()[-1])
+        ui.send('\n')
+        ui.expect('C credits')
+        ui.send('q')
+        ui.finish()
 
 
 def tui_checks(binary, root):
@@ -528,4 +592,5 @@ if __name__ == '__main__':
     with tempfile.TemporaryDirectory(prefix='gsadv-workflow-test-') as tmp:
         checks(binary, Path(tmp))
         tui_checks(binary, Path(tmp))
+        github_patch_checks(binary, Path(tmp) / 'patches')
     print('Workflow recovery checks passed')
