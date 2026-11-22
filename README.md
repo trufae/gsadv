@@ -25,6 +25,12 @@ The commits tab only lists commits whose message matches `GSADV_GREP`
 change the `git log -E --grep` regex; an empty value shows all commits. Use
 `git config --local gsadv.grep ''` to show all commits by default in a repository.
 
+A `!` in the left margin marks a saved local invalid tag. These are manual triage
+decisions with a reason, separate from advisory and release state. Selecting a
+tagged item shows its reason below the list; press `i` to read or edit the full
+reason, or `I` to clear the tag. From the CLI, use `gsadv invalid <id|commit|url>`
+to read the reason and `gsadv unmark <id|commit|url>` to clear it.
+
 ## Install
 
 Requires `git` and [gh](https://cli.github.com) for GitHub or

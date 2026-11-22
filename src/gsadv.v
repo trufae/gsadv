@@ -122,7 +122,7 @@ fn main() {
 		'ls' {
 			marks := api.invalid_marks()!
 			rows := api.advisories_with_releases(id)!
-			println(advisory_columns(999))
+			println(marked_row(advisory_columns(999), '', 999))
 			for r in rows {
 				println(marked_row(row(r, 999), marks[invalid_key(r[0])], 999))
 			}

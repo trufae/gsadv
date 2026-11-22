@@ -81,6 +81,8 @@ fn (api Repository) unmark_invalid(target string) ! {
 }
 
 fn marked_row(line string, reason string, width int) string {
-	if reason == '' { return line }
-	return clip_line('[invalid] ${line}', line_width(width))
+	if width < 4 { return clip_line(line, line_width(width)) }
+	// Reserve the same two cells on every row so local tags cannot shift columns.
+	mark := if reason == '' { '  ' } else { '! ' }
+	return clip_line(mark + line, line_width(width))
 }

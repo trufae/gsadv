@@ -235,6 +235,8 @@ b: find similar bugs using the selected advisory or source as a template
 C: manage advisory credits (finder, reporter, fix developer and other roles)
 c (or a): request CVE; d: accept/reopen as draft; p: publish; x: close
 i: tag the selected item invalid locally (with a reason); I: remove the tag
+!: a saved local invalid tag; its reason appears below the list. Press i to read/edit it.
+These tags are manual triage decisions, separate from advisory and release state.
 s: advisory status; m: actions menu; f/F: next/previous state filter in the current tab
 In issues/PRs/MRs, press f once from all to show only open items; each tab remembers its filter.
 /: filter the current list by text (Enter applies; empty clears; Esc cancels)
@@ -1017,12 +1019,11 @@ fn tui(initial_api Repository, initial_label string) {
 				'No entries. Press g to reload or n to enter a commit/URL.'
 			})
 		}
+		invalid_note := if reason == '' { '' } else { 'Local invalid tag (i reason, I clear): ${reason}' }
 		hint := if pending_action != '' {
 			'Updating ${pending_action}... You can keep browsing; other changes and quitting wait for completion.'
 		} else if status != '' {
 			status
-		} else if reason != '' {
-			'invalid (local): ${reason}'
 		} else if id != '' {
 			cve := match advs[ai][2] {
 				'requested*' { 'CVE request recorded locally; g reload, s status' }
@@ -1035,12 +1036,12 @@ fn tui(initial_api Repository, initial_label string) {
 			'No advisory selected; n creates a draft from a commit, issue or PR'
 		}
 		filter_hint := if queries[view] == '' { hint } else { '/${queries[view]} | ${hint}' }
-		mut headers := [term.bold(header), term.bold(tab_line), term.dim(columns)]
+		mut headers := [term.bold(header), term.bold(tab_line), term.dim(marked_row(columns, '', w))]
 		// Keep the active view visible when a short terminal only has one header.
 		if layout.head == 1 { headers[0] = headers[1] }
 		credit_hint := if api.provider == 'github' { ['C credits'] } else { []string{} }
 		screen.draw(list_frame(layout, headers, body, [filter_hint,
-			key_hints(['m actions', 'i invalid', 'I unmark', 'b similar bugs', ...credit_hint, 's status', ...actions, 'g reload', 'A agent'], width),
+			if reason != '' { invalid_note } else { key_hints(['m actions', 'i invalid', 'I unmark', 'b similar bugs', ...credit_hint, 's status', ...actions, 'g reload', 'A agent'], width) },
 			key_hints(['? help', 'q quit', 'tab/shift-tab views', '/ text', if view == 1 { 'l grep' } else { 'l label' }, 'f/F state', 'j/k/J/K move',
 			'enter view', 'e edit', 'r review', 'M comment', 'n new'], width)]), w, h)
 		mut k := ''
@@ -1063,7 +1064,7 @@ fn tui(initial_api Repository, initial_label string) {
 				actions.join('\n') + '\ns status details\nv view advisory\ne edit advisory\nr AI review\n' + if api.provider == 'github' { 'C manage credits\n' } else { '' }
 			}
 			source_menu := if input == '' { '' } else { 'r AI review selected source\n' + if view >= 2 { 'M post discussion comment\n' } else { '' } }
-			k = tui_dialog('Actions for ${target}\n${hint}\n\n${advisory_menu}' +
+			k = tui_dialog('Actions for ${target}\n${hint}' + if reason == '' { '' } else { '\n${invalid_note}' } + '\n\n${advisory_menu}' +
 				source_menu + 'i mark invalid locally / edit reason\nI remove local invalid tag\nb Find similar bugs\n\nChoose a key; Enter/Esc cancels.')
 			if k == 'v' {
 				k = '\n'
@@ -1174,6 +1175,9 @@ fn tui(initial_api Repository, initial_label string) {
 				}
 				screen.width = 0
 				if k == 'i' {
+					if reason != '' && tui_dialog('Saved local invalid tag for ${target}\n\nReason:\n${reason}\n\ne: edit reason; Enter/Esc: back') != 'e' {
+						continue
+					}
 					text := tui_input('Mark ${target} invalid locally. Enter saves; Esc cancels.\nExample: No tagged release shipped vulnerable code.',
 						'Reason: ', reason, false) or { continue }
 					api.mark_invalid(target, text) or { status = 'error: ${err}'; continue }

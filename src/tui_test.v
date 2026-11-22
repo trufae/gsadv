@@ -124,8 +124,8 @@ fn test_list_cache_refreshes_links_filters_and_row_width() {
 	list.filter(entries, 'GHSA-ONE', 'all')
 	assert list.visible == [0]
 	assert list.line(0, entries, advs, 1, 120, false).contains('GHSA-one')
-	assert list.line(0, entries, advs, 1, 30, false) == 'Fix bounds check 界'
-	assert term.strip_ansi(list.line(0, entries, advs, 1, 30, true)) == 'Fix bounds check 界'
+	assert list.line(0, entries, advs, 1, 30, false) == '  Fix bounds check 界'
+	assert term.strip_ansi(list.line(0, entries, advs, 1, 30, true)) == '  Fix bounds check 界'
 	list.filter(entries, '', 'all')
 	assert list.visible == [0, 1]
 	// A refresh removing a link cannot retain its text filter or severity.

@@ -58,22 +58,52 @@ fn test_invalid_tags_in_lists_search_and_clear_without_changing_lifecycle() {
 	assert list.visible == [0]
 	for width in [10, 30, 80, 120] {
 		line := list.line(0, entries, advs, 1, width, false)
-		assert line.starts_with('[invalid]')
+		assert line.starts_with('! ')
 		assert clip_line(line, line_width(width)) == line
 		assert term.strip_ansi(list.line(0, entries, advs, 1, width, true)) == term.strip_ansi(line)
 	}
 	// Marking a source does not implicitly mark its linked advisory.
 	list.rebuild(advs, advs, advisory_links(advs), 0)
 	list.mark_invalid(advs, {'abcdef1234567890': 'No tagged release affected'})
-	assert !list.line(0, advs, advs, 0, 120, false).contains('[invalid]')
+	assert list.line(0, advs, advs, 0, 120, false).starts_with('  ')
 	list.mark_invalid(advs, {'ghsa-one': 'No tagged release affected'})
 	list.filter(advs, 'invalid', 'draft')
 	assert list.visible == [0]
-	assert list.line(0, advs, advs, 0, 120, false).contains('[invalid]')
+	assert list.line(0, advs, advs, 0, 120, false).starts_with('! ')
 	assert advs[0][1] == 'draft'
 	list.rebuild(advs, advs, advisory_links(advs), 0)
 	list.mark_invalid(advs, map[string]string{})
 	list.filter(advs, 'invalid', 'all')
 	assert list.visible == []int{}
-	assert !list.line(0, advs, advs, 0, 120, false).contains('[invalid]')
+	assert list.line(0, advs, advs, 0, 120, false).starts_with('  ')
+}
+
+fn test_local_invalid_tags_preserve_columns_in_every_view_and_width() {
+	title := 'Fix 界 e\u0301 👩🏽‍💻 bounds check '.repeat(10)
+	advisory := ['GHSA-abcd-efgh-ijkl', 'draft', '-', 'medium', title, 'f23b8efeec', '']
+	commit := ['f23b8efeecd681c45a53c500103adf6f098600ae', '2026-10-30', title]
+	issue := ['https://github.com/owner/repo/issues/42', '42', 'issue', 'open', title]
+	for view, entry in [advisory, commit, issue, issue] {
+		entries := [entry, entry]
+		advs := [advisory, advisory]
+		mut list := TuiList{}
+		list.rebuild(entries, advs, advisory_links(advs), view)
+		for width in 1 .. 161 {
+			unmarked := term.strip_ansi(list.line(0, entries, advs, view, width, false))
+			list.mark_invalid(entries, {invalid_key(entry[0]): 'No released version affected'})
+			marked := term.strip_ansi(list.line(1, entries, advs, view, width, false))
+			if width < 4 {
+				assert marked == unmarked
+			} else {
+				assert unmarked.starts_with('  ')
+				assert marked == '!' + unmarked[1..]
+			}
+			mut cells := 0
+			for g in marked.graphemes() { cells += cell_width(g) }
+			assert cells <= line_width(width)
+			assert !marked.contains('\n') && !marked.contains('[invalid]')
+			assert term.strip_ansi(list.line(1, entries, advs, view, width, true)) == marked
+			list.mark_invalid(entries, map[string]string{})
+		}
+	}
 }

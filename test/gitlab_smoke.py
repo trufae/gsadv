@@ -259,9 +259,18 @@ def main():
         run('invalid', 'GL-42', 'No released version affected')
         assert 'No released version' in run('invalid', 'https://gitlab.com/group/sub/repo/-/issues/42')
         assert len(calls()) == count
-        assert '[invalid]' in run('ls')
+
+        def marked_listing():
+            output = run('ls')
+            assert '[invalid]' not in output
+            return next(line for line in output.splitlines() if 'GL-42' in line)
+
+        marked = marked_listing()
+        assert marked.startswith('! '), marked
         run('unmark', 'https://gitlab.com/group/sub/repo/-/issues/42')
-        assert '[invalid]' not in run('ls')
+        unmarked = marked_listing()
+        assert unmarked.startswith('  '), unmarked
+        assert marked[2:] == unmarked[2:]
         count = len(calls())
         run('publish', 'GL-42', expected=1)
         run('draft', 'GL-42', expected=1)
@@ -368,8 +377,20 @@ def tui_smoke(binary, root, env):
         until('disclosures')
         os.write(master, b'i')
         until('Reason:')
-        os.write(master, b'Not shipped\r')
-        until('[invalid]')
+        local_reason = ('Not shipped; introduced after the previous release and fixed before '
+                        'the next release. ' * 3 + 'END OF SAVED REASON')
+        os.write(master, (local_reason + '\r').encode())
+        tagged = until('Local invalid tag (i reason, I clear): Not shipped')
+        assert '[invalid]' not in tagged
+        assert re.search(r'! .*GL-42', tagged), tagged
+        os.write(master, b'i')
+        saved = until('e: edit reason; Enter/Esc: back')
+        assert 'Saved local invalid tag for GL-42' in saved and 'Not shipped' in saved
+        assert 'END OF SAVED REASON' in saved
+        os.write(master, b'e')
+        until('Reason:')
+        os.write(master, b'\x1b')
+        until('Local invalid tag (i reason, I clear): Not shipped')
         os.write(master, b'I')
         until('Removed local invalid tag')
         os.write(master, b'\t')
