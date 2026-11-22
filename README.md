@@ -11,6 +11,7 @@ disclosures, written in [V](https://vlang.io).
   issues on GitLab.
 
 Run `gsadv` inside a repository to open the terminal UI.
+Use `J`/`K` or AvPág/RePág (Page Down/Page Up) to move down/up ten rows.
 Press `l` to change the shared issue/PR/MR label filter; an empty value shows all
 labels. Results appear page by page while the remaining history loads in the
 background. Changing the label takes effect after the current page finishes.

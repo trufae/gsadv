@@ -228,7 +228,7 @@ fn input_line(prompt string, text string, width int) string {
 }
 
 const tui_help = 'tab/shift-tab: next/previous view (advisories/commits/issues/PRs or MRs)
-j/k or mouse wheel: move; J/K: move ten rows
+j/k or mouse wheel: move; J/K or PgDn/PgUp (AvPág/RePág): move ten rows
 enter: view advisory/commit/issue/PR; e: edit advisory; r: AI review selected item; n: new draft
 M: edit and post a discussion comment on the selected issue/PR/MR
 b: find similar bugs using the selected advisory or source as a template
@@ -761,8 +761,8 @@ fn credits_tui(api Repository, id string) ! {
 		match k {
 			'j', '\x1b[B' { sel++ }
 			'k', '\x1b[A' { sel-- }
-			'J' { sel += 10 }
-			'K' { sel -= 10 }
+			'J', '\x1b[6~' { sel += 10 }
+			'K', '\x1b[5~' { sel -= 10 }
 			'?' {
 				screen.width = 0
 				credit_role_picker('') or {}
@@ -1079,12 +1079,10 @@ fn tui(initial_api Repository, initial_label string) {
 			'q', '\x03' {
 				break
 			}
-			'j', '\x1b[B', 'J' {
-				sel[view] += if k == 'J' { 10 } else { 1 }
-			}
-			'k', '\x1b[A', 'K' {
-				sel[view] -= if k == 'K' { 10 } else { 1 }
-			}
+			'j', '\x1b[B' { sel[view]++ }
+			'k', '\x1b[A' { sel[view]-- }
+			'J', '\x1b[6~' { sel[view] += 10 }
+			'K', '\x1b[5~' { sel[view] -= 10 }
 			'\t', '\x1b[Z' {
 				// Jump to a linked entry in the destination view when there is one.
 				step := if k == '\t' { 1 } else { tabs.len - 1 }

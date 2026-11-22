@@ -24,6 +24,8 @@ root = Path(os.environ['TEST_ROOT'])
 args = sys.argv[1:]
 assert '--method' not in args and '--input' not in args, args
 if Path(sys.argv[0]).name == 'git':
+    if args[0] != 'log':
+        sys.exit(1)
     for i in range(30):
         print(f'{i:040x}\\t2026-11-09\\t{i:02} Fix 界 é ' + 'long subject ' * 30)
 elif '.credits // []' in args:
@@ -110,6 +112,7 @@ def checks(binary, root):
              (40, 5), (60, 4), (79, 10), (80, 6), (120, 24)]
     with Terminal(binary, root, 'tui', size=(1, 1)) as ui:
         screen = Screen((1, 1))
+        ui.expect('0')
         frame(ui, screen)
         assert screen.alt and screen.rows == ['0']
         ui.send('JJ')
@@ -118,6 +121,13 @@ def checks(binary, root):
         for size in sizes[1:]:
             resize(ui, screen, size)
         assert any('20 Vulnerability' in row for row in screen.rows)
+
+        # RePág/AvPág match K/J: ten rows, regardless of the visible page size.
+        for key, selected in [('\x1b[5~', 10), ('\x1b[5~', 0),
+                              ('\x1b[6~', 10), ('\x1b[6~', 20)]:
+            ui.send(key)
+            ui.expect(f'GHSA-test-{selected:02} | draft')
+            frame(ui, screen)
 
         # A reload of unchanged data does not clear or repaint the screen.
         calls = len((root / 'calls').read_text().splitlines())
@@ -144,8 +154,8 @@ def checks(binary, root):
         assert not ui.read(0.3)
 
         # Every tab remains bounded through narrow and short resizes.
-        for key in ('\t', '\t', '\t'):
-            ui.send(key)
+        for _ in range(4):
+            ui.send('\t')
             frame(ui, screen)
             for size in ((7, 2), (30, 4), (120, 24)):
                 resize(ui, screen, size)
@@ -160,7 +170,11 @@ def checks(binary, root):
                 resize(ui, screen, size)
                 if size == (1, 1) and key != '/':
                     ui.send('J')
-                    frame(ui, screen)
+                    # Adjacent wrapped lines can paint the same single cell.
+                    while ui.read(0.25):
+                        pass
+                    screen.feed(ui.buffer)
+                    ui.buffer = ''
             ui.send('\x1b')
             frame(ui, screen)
 
@@ -182,6 +196,9 @@ def checks(binary, root):
         frame(ui, screen)
         for size in sizes[1:]:
             resize(ui, screen, size)
+        for key, selected in [('\x1b[6~', 10), ('\x1b[5~', 0)]:
+            ui.send(key)
+            assert f'\x1b[7m@user{selected:02}' in frame(ui, screen)
         for key in ('?', 'a'):
             ui.send(key)
             frame(ui, screen)
