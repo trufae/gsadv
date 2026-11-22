@@ -38,6 +38,9 @@ Requires `git` and [gh](https://cli.github.com) for GitHub or
 `gh auth login` or `glab auth login`. AI features use Claude by default;
 set `GSADV_AI` to use another agent command.
 
+Agent progress and completion messages show elapsed time in hours, minutes and
+seconds, for example `1h 7m 30s`.
+
 Claude's first completed response is kept even if background tasks emit later
 follow-up messages. The full conversation remains in the saved transcript.
 

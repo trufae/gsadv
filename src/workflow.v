@@ -254,6 +254,19 @@ fn edit(dir string, orig string) ?Adv {
 	return none
 }
 
+fn format_elapsed(seconds int) string {
+	hours := seconds / 3600
+	minutes := seconds % 3600 / 60
+	remaining_seconds := seconds % 60
+	if hours > 0 {
+		return '${hours}h ${minutes}m ${remaining_seconds}s'
+	}
+	if minutes > 0 {
+		return '${minutes}m ${remaining_seconds}s'
+	}
+	return '${remaining_seconds}s'
+}
+
 // Keep stdout on disk from the start so interruption cannot discard pipe buffers.
 // stderr is inherited; Claude's structured stdout needs a separate progress reader.
 fn ask_ai(dir string) ! {
@@ -270,7 +283,7 @@ fn ask_ai(dir string) ! {
 	mut process := os.new_process('sh')
 	process.set_args(['-c', '{ ${command}\n} < "\$1" > "\$2"', 'sh', pf, log])
 	eprintln('running ${ai} ...')
-	mut elapsed := time.new_stopwatch()
+	mut stopwatch := time.new_stopwatch()
 	process.run()
 	defer { process.close() }
 	mut stream := ClaudeStream{}
@@ -287,9 +300,9 @@ fn ask_ai(dir string) ! {
 			}
 		}
 		if !alive { break }
-		seconds := int(elapsed.elapsed().seconds())
+		seconds := int(stopwatch.elapsed().seconds())
 		if seconds >= next_update {
-			eprintln('[gsadv] agent still running (${seconds}s elapsed)')
+			eprintln('[gsadv] agent still running (${format_elapsed(seconds)} elapsed)')
 			next_update = seconds + 10
 		}
 		time.sleep(100 * time.millisecond)
@@ -304,7 +317,8 @@ fn ask_ai(dir string) ! {
 		reason := if stream.failure != '' { stream.failure } else { 'Claude exited without a final result' }
 		return error('${reason}; event log saved in ${log}')
 	}
-	eprintln('[gsadv] agent finished (${int(elapsed.elapsed().seconds())}s elapsed)')
+	seconds := int(stopwatch.elapsed().seconds())
+	eprintln('[gsadv] agent finished (${format_elapsed(seconds)} elapsed)')
 }
 
 struct ClaudeContent {

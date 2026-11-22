@@ -15,8 +15,10 @@ In the TUI, `A` cycles between these four presets.
 
 Agent stderr is visible immediately in CLI and TUI workflows. gsadv also prints
 an elapsed-time update every 10 seconds while the command is running, including
-when an agent is quiet. This update indicates the process is alive, not how much
-of the task it has completed. To capture feedback, redirect stderr with `2> progress.log`.
+when an agent is quiet. Progress and completion messages use hours, minutes and
+seconds (for example, `1h 7m 30s`), omitting leading zero units. This update indicates
+the process is alive, not how much of the task it has completed. To capture feedback,
+redirect stderr with `2> progress.log`.
 
 For the exact `claude -p` preset (including `GSADV_AI='claude -p'`), gsadv adds
 `--output-format stream-json --verbose`. Assistant messages and tool activity appear
