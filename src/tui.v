@@ -2,6 +2,7 @@ module main
 
 import os
 import term
+import time
 import encoding.utf8.east_asian
 
 // Count terminal cells, keeping combining characters and emoji sequences together.
@@ -228,23 +229,29 @@ fn input_line(prompt string, text string, width int) string {
 }
 
 const tui_help = 'tab/shift-tab, l/h or right/left: next/previous view (advisories/commits/issues/PRs or MRs/Reports)
+H/L: first/last view
 j/k or mouse wheel: move; J/K or PgDn/PgUp (AvPág/RePág): move ten rows
-enter: view advisory/commit/issue/PR; e: edit advisory; r: AI review selected item; n: AI draft
+a: actions for the selected item; the panel lists only what applies to the current tab
+m: mark the selected item for everyone using gsadv on this repository (other terminals
+   update within a second): * important, @ work in progress, ^ pin to the top,
+   - ignore (dim, sort last), ! invalid (with a reason); u in the panel removes it.
+   The mark, who set it, when and its note appear below the list.
+   Marks are manual triage decisions, separate from advisory and release state.
+enter: view advisory/commit/issue/PR/report; e: edit advisory or report; r: AI review; n: AI draft
 N: write a draft manually from a template in \$EDITOR
 M: edit and post a discussion comment on the selected issue/PR/MR
 b: find similar bugs using the selected advisory or source as a template
 C: manage advisory credits (finder, reporter, fix developer and other roles)
-c (or a): request CVE; d: accept/reopen as draft; p: publish; x: close
-i: tag the selected item invalid locally (with a reason); I: remove the tag
-!: a saved local invalid tag; its reason appears below the list. Press i to read/edit it.
-These tags are manual triage decisions, separate from advisory and release state.
-s: advisory status; m: actions menu; f/F: next/previous state filter in the current tab
+c: request CVE; d: accept/reopen as draft; p: publish; x: close
+i: mark the selected item invalid (with a reason); I: remove its mark
+s: advisory status; f/F: next/previous state filter in the current tab
 In issues/PRs/MRs, press f once from all to show only open items; each tab remembers its filter.
 /: filter the current list by text (Enter applies; empty clears; Esc cancels)
 g: reload; A: cycle AI agent
 ,: project settings saved in .gsadv.ini: issues/PRs/MRs label (empty shows all labels),
    commits git log -E --grep regex (empty shows all), Reports antfind and attic directories
-Reports: REPORT.md files under antfind, skipping attic; enter views, e edits, f/F severity
+Reports: REPORT.md files under antfind, skipping attic; enter views, e edits, f/F severity,
+   x asks the AI to fix the bug and commit it locally (OSS-SCAN - <id>), t moves the report to the attic
 ?: this help; q or Ctrl+C: quit
 
 Severity: 🔴 critical, 🟠 high, 🟡 medium, 🟢 low, ⚪ unknown.
@@ -849,9 +856,12 @@ fn tui(initial_api Repository, initial_label string) {
 	mut sel := [0, 0, 0, 0, 0]
 	mut top := [0, 0, 0, 0, 0]
 	mut status := ''
-	mut invalid := map[string]string{}
+	mut marks := map[string]Mark{}
+	mut marks_stamp := ''
+	mut marks_checked := time.now()
 	if api.repo != '' {
-		invalid = api.invalid_marks() or { status = 'local invalid tags: ${err}'; map[string]string{} }
+		marks = api.marks() or { status = 'local marks: ${err}'; map[string]Mark{} }
+		marks_stamp = api.marks_stamp()
 	}
 	mut state_filters := [0, 0, 0, 0, 0]
 	mut queries := ['', '', '', '', '']
@@ -904,7 +914,8 @@ fn tui(initial_api Repository, initial_label string) {
 					if result.error == '' && result.text != '' {
 						api = result.repository
 						state_filters[0], state_filters[2], state_filters[3] = 0, 0, 0
-						invalid = api.invalid_marks() or { status = 'local invalid tags: ${err}'; map[string]string{} }
+						marks = api.marks() or { status = 'local marks: ${err}'; map[string]Mark{} }
+						marks_stamp = api.marks_stamp()
 						changed = [true, true, true, true, true]
 						loader.request(api, label, .advisories, false)
 						loader.request(api, label, .issues, false)
@@ -952,6 +963,16 @@ fn tui(initial_api Repository, initial_label string) {
 				}
 			}
 		}
+		// Other gsadv processes share the marks; pick up their changes.
+		if api.repo != '' && time.since(marks_checked) >= time.second {
+			marks_checked = time.now()
+			stamp := api.marks_stamp()
+			if stamp != marks_stamp {
+				marks_stamp = stamp
+				marks = api.marks() or { status = 'local marks: ${err}'; marks.clone() }
+				changed = [true, true, true, true, true]
+			}
+		}
 		filters := api.tui_states(view)
 		w, h := terminal_size()
 		width := line_width(w)
@@ -960,7 +981,7 @@ fn tui(initial_api Repository, initial_label string) {
 		for v, entries in entries_by_view {
 			if changed[v] {
 				lists[v].rebuild(entries, advs, links, v)
-				lists[v].mark_invalid(entries, invalid)
+				lists[v].mark(entries, marks, v)
 				changed[v] = false
 			}
 			lists[v].filter(entries, queries[v], api.tui_states(v)[state_filters[v]])
@@ -979,7 +1000,11 @@ fn tui(initial_api Repository, initial_label string) {
 		ai := if selected >= 0 { lists[view].links[selected] } else { -1 }
 		id := if ai >= 0 && ai < advs.len && advs[ai].len >= 5 { advs[ai][0] } else { '' }
 		target := if input != '' { input } else { id }
-		reason := invalid[invalid_key(target)]
+		report := if view == 4 && selected >= 0 && reports[selected].len >= 9 { reports[selected] } else { []string{} }
+		mark_target := if report.len > 0 { 'report:' + report[3] } else { target }
+		mark_name := if report.len > 0 { report[3] } else { target }
+		current := if view == 4 { marks[mark_key(report, 4)] or { Mark{} } } else { marks[invalid_key(target)] or { Mark{} } }
+		reason := if current.kind == 'invalid' { current.reason } else { '' }
 		actions := if id != '' {
 			api.actions(advs[ai])
 		} else {
@@ -1034,13 +1059,12 @@ fn tui(initial_api Repository, initial_label string) {
 				'No entries. Press g to reload or n to enter a commit/URL.'
 			})
 		}
-		invalid_note := if reason == '' { '' } else { 'Local invalid tag (i reason, I clear): ${reason}' }
+		mark_note := if current.kind == '' { '' } else { '${mark_symbol(current.kind)} ${current.describe()} (m changes)' }
 		hint := if pending_action != '' {
 			'Updating ${pending_action}... You can keep browsing; other changes and quitting wait for completion.'
 		} else if status != '' {
 			status
-		} else if view == 4 && selected >= 0 && reports[selected].len >= 9 {
-			report := reports[selected]
+		} else if report.len > 0 {
 			'${report[3]} | ${report[1]} | ${report[6]} | ${report[5]} | ${report[0]}'
 		} else if id != '' {
 			cve := match advs[ai][2] {
@@ -1057,53 +1081,135 @@ fn tui(initial_api Repository, initial_label string) {
 		mut headers := [term.bold(header), term.bold(tab_line), term.dim(marked_row(columns, '', w))]
 		// Keep the active view visible when a short terminal only has one header.
 		if layout.head == 1 { headers[0] = headers[1] }
-		credit_hint := if api.provider == 'github' { ['C credits'] } else { []string{} }
+		item_hints := if view == 4 {
+			['a actions', 'm mark', 'enter view', 'e edit', 'x AI fix', 't attic', 'g reload', 'A agent']
+		} else {
+			['a actions', 'm mark', 'enter view', 'e edit', 'r review', 'n new', 'N manual draft', 'g reload', 'A agent']
+		}
 		screen.draw(list_frame(layout, headers, body, [filter_hint,
-			if reason != '' { invalid_note } else { key_hints(['m actions', 'N manual draft', 'i invalid', 'I unmark', 'b similar bugs', ...credit_hint, 's status', ...actions, 'g reload', 'A agent'], width) },
-			key_hints(['? help', 'q quit', 'h/l views', '/ text', ', settings', 'f/F state', 'j/k/J/K move',
-			'enter view', 'e edit', 'r review', 'M comment', 'n new'], width)]), w, h)
+			if mark_note != '' { mark_note } else { key_hints(item_hints, width) },
+			key_hints(['? help', 'q quit', 'hjkl move', '/ text', ', settings', 'f/F state'], width)]), w, h)
 		mut k := ''
 		for {
 			if loader.results.len > 0 || action_results.len > 0 { break }
 			k = poll_key()
 			nw, nh := terminal_size()
-			if k != '' || nw != w || nh != h { break }
+			if k != '' || nw != w || nh != h || time.since(marks_checked) >= time.second { break }
 		}
 		mut show_input := input
 		if k == '' { continue }
 		status = ''
+		if k == 'a' {
+			screen.width = 0
+			if view == 4 {
+				if report.len == 0 {
+					status = 'no report selected'
+					continue
+				}
+				k = tui_dialog('Actions for ${report[3]}\n${hint}' + if mark_note == '' { '' } else { '\n${mark_note}' } +
+					'\n\nv view REPORT.md\ne edit REPORT.md in \$EDITOR\nx fix the bug with AI and commit it locally (never pushed)\n' +
+					't move to the attic (${project_setting('attic')})\nm mark (important, wip, pin, ignore, invalid)\n\nChoose a key; Enter/Esc cancels.')
+				if k == 'v' { k = '\n' } else if k !in ['e', 'x', 't', 'm'] { continue }
+			} else {
+				if target == '' {
+					status = 'no item selected'
+					continue
+				}
+				what := ['', 'commit', 'issue', if api.provider == 'gitlab' { 'MR' } else { 'PR' }][view]
+				source_menu := if input == '' { '' } else {
+					'Selected ${what}:\nr AI review\nn draft an advisory from it with AI\nb find similar bugs using it as a template\n' +
+						if view >= 2 { 'M post a discussion comment\n' } else { '' } + '\n'
+				}
+				advisory_menu := if id == '' { '' } else {
+					'Advisory ${id}:\nv view\ne edit\ns status details\n' + if input == '' { 'r AI review\nb find similar bugs using it as a template\n' } else { '' } +
+						if api.provider == 'github' { 'C manage credits\n' } else { '' } + actions.map(it + '\n').join('') + '\n'
+				}
+				k = tui_dialog('Actions for ${target}\n${hint}' + if mark_note == '' { '' } else { '\n${mark_note}' } + '\n\n' +
+					source_menu + advisory_menu + 'N write a draft manually\nm mark (important, wip, pin, ignore, invalid)\n\nChoose a key; Enter/Esc cancels.')
+				if k == 'v' && id != '' {
+					k = '\n'
+					show_input = ''
+				} else if k !in ['s', 'e', 'r', 'b', 'C', 'M', 'N', 'n', 'm'] && !actions.any(it.starts_with(k + ' ')) {
+					continue
+				}
+			}
+		}
 		if k == 'm' {
-			if target == '' {
-				status = 'no item selected'
+			if api.repo == '' || mark_target == '' {
+				status = 'select an item in a loaded repository first; marks are stored per repository'
 				continue
 			}
 			screen.width = 0
-			advisory_menu := if id == '' { '' } else {
-				actions.join('\n') + '\ns status details\nv view advisory\ne edit advisory\nr AI review\n' + if api.provider == 'github' { 'C manage credits\n' } else { '' }
+			choice := tui_dialog('Mark ${mark_name} for everyone using gsadv on ${api.repo}' +
+				if current.kind == '' { '' } else { '\nCurrent: ${current.describe()}' } +
+				'\n\ni * important\nw @ work in progress (note who and what)\np ^ pin to the top of the list\n' +
+				'x - ignore (dim, sort last)\n! ! invalid (requires a reason)\nu   remove the mark\n\nChoose a key; Enter/Esc cancels.')
+			kinds := {
+				'i': 'important'
+				'w': 'wip'
+				'p': 'pin'
+				'x': 'ignore'
+				'!': 'invalid'
 			}
-			source_menu := if input == '' { '' } else { 'r AI review selected source\n' + if view >= 2 { 'M post discussion comment\n' } else { '' } }
-			k = tui_dialog('Actions for ${target}\n${hint}' + if reason == '' { '' } else { '\n${invalid_note}' } + '\n\n${advisory_menu}' +
-				source_menu + 'N write a draft manually\ni mark invalid locally / edit reason\nI remove local invalid tag\nb Find similar bugs\n\nChoose a key; Enter/Esc cancels.')
-			if k == 'v' {
-				k = '\n'
-				show_input = ''
-			} else if k !in ['s', 'e', 'r', 'b', 'C', 'M', 'i', 'I', 'N'] && !actions.any(it.starts_with(k + ' ')) {
+			if choice == 'u' {
+				api.unmark_invalid(mark_target) or { status = 'error: ${err}'; continue }
+				status = 'Removed the mark from ${mark_name}'
+			} else if kind := kinds[choice] {
+				example := match kind {
+					'invalid' { '\nExample: No tagged release shipped vulnerable code.' }
+					'wip' { '\nExample: drafting the advisory' }
+					else { '' }
+				}
+				note := tui_input('Mark ${mark_name} ${kind}. Enter saves; Esc cancels.${example}',
+					if kind == 'invalid' { 'Reason: ' } else { 'Note (optional): ' }, if current.kind == kind { current.reason } else { '' }, false) or { continue }
+				api.set_mark(mark_target, kind, note) or { status = 'error: ${err}'; continue }
+				status = 'Marked ${mark_name} ${kind}' + if note.trim_space() == '' { '' } else { ': ${note.trim_space()}' }
+			} else {
 				continue
 			}
-		}
-		if pending_action != '' && k in ['q', '\x03', 'a', 'c', 'd', 'p', 'x', 'e', 'r', 'n', 'N', 'C', 'M', 'b', '\n', '\r'] {
+			marks = api.marks() or { status = 'error: ${err}'; continue }
+			marks_stamp = api.marks_stamp()
+			changed = [true, true, true, true, true]
 			continue
 		}
-		if view == 4 && k in ['\n', '\r', 'e'] {
-			if selected < 0 || reports[selected].len < 9 {
+		if pending_action != '' && k in ['q', '\x03', 'c', 'd', 'p', 'x', 't', 'e', 'r', 'n', 'N', 'C', 'M', 'b', '\n', '\r'] {
+			continue
+		}
+		if view == 4 && k in ['\n', '\r', 'e', 'x', 't'] {
+			if report.len == 0 {
 				status = 'no report selected'
 				continue
 			}
-			path := reports[selected][0]
+			path := report[0]
 			screen.width = 0
+			if k == 't' {
+				if tui_dialog('Move ${os.dir(path)} to the attic? [y/N] ') == 'y' {
+					dest := move_to_attic(path, reports_dir, project_setting('attic')) or {
+						status = 'error: ${err}'
+						continue
+					}
+					status = 'Moved ${report[3]} to ${dest}'
+					loader.request(api, label, .reports, true)
+				}
+				continue
+			}
+			if k == 'x' && api.repo == '' {
+				status = 'Repository unavailable; wait for loading or press g to retry'
+				continue
+			}
 			cooked()
 			if k == 'e' {
 				sh('${os.getenv_opt('EDITOR') or { 'vi' }} "\$1"', path)
+			} else if k == 'x' {
+				println('Fix ${report[3]} with AI in the checkout; a verified fix is committed locally, never pushed.')
+				println('The default Claude preset may edit files; set GSADV_AI to change the agent or its permissions.')
+				if ctx := action_input('Extra context (optional; Enter starts, Esc cancels): ') {
+					tui_workflow(api, 'fix', path, ctx) or {
+						println('error: ${err}')
+					}
+					action_input('Press Enter to return (Ctrl+C/Esc also returns): ') or {}
+				}
+				loader.request(api, label, .git_status, true)
 			} else {
 				view_text(os.read_file(path) or { 'error: ${err}' }) or { status = 'error: ${err}' }
 			}
@@ -1119,10 +1225,14 @@ fn tui(initial_api Repository, initial_label string) {
 			'k', '\x1b[A' { sel[view]-- }
 			'J', '\x1b[6~' { sel[view] += 10 }
 			'K', '\x1b[5~' { sel[view] -= 10 }
-			'\t', '\x1b[Z', 'l', 'h', '\x1b[C', '\x1b[D' {
+			'\t', '\x1b[Z', 'l', 'h', '\x1b[C', '\x1b[D', 'H', 'L' {
 				// Jump to a linked entry in the destination view when there is one.
 				step := if k in ['\t', 'l', '\x1b[C'] { 1 } else { tabs.len - 1 }
-				next := (view + step) % tabs.len
+				next := match k {
+					'H' { 0 }
+					'L' { tabs.len - 1 }
+					else { (view + step) % tabs.len }
+				}
 				if next == 0 && ai in advisory_matches {
 					if ai !in visible[0] {
 						state_filters[0] = 0
@@ -1194,7 +1304,8 @@ fn tui(initial_api Repository, initial_label string) {
 			}
 			'g' {
 				if api.repo != '' {
-					invalid = api.invalid_marks() or { status = 'local invalid tags: ${err}'; invalid.clone() }
+					marks = api.marks() or { status = 'local marks: ${err}'; marks.clone() }
+					marks_stamp = api.marks_stamp()
 					changed = [true, true, true, true, true]
 				}
 				loader.request(api, label, .commits, false)
@@ -1208,25 +1319,25 @@ fn tui(initial_api Repository, initial_label string) {
 				}
 			}
 			'i', 'I' {
-				if api.repo == '' || target == '' {
+				if api.repo == '' || mark_target == '' {
 					status = 'select an item in a loaded repository first'
 					continue
 				}
 				screen.width = 0
 				if k == 'i' {
-					if reason != '' && tui_dialog('Saved local invalid tag for ${target}\n\nReason:\n${reason}\n\ne: edit reason; Enter/Esc: back') != 'e' {
+					if reason != '' && tui_dialog('Saved local invalid tag for ${mark_name}\n\nReason:\n${reason}\n\ne: edit reason; Enter/Esc: back') != 'e' {
 						continue
 					}
-					text := tui_input('Mark ${target} invalid locally. Enter saves; Esc cancels.\nExample: No tagged release shipped vulnerable code.',
+					text := tui_input('Mark ${mark_name} invalid locally. Enter saves; Esc cancels.\nExample: No tagged release shipped vulnerable code.',
 						'Reason: ', reason, false) or { continue }
-					api.mark_invalid(target, text) or { status = 'error: ${err}'; continue }
-					invalid = api.invalid_marks() or { status = 'error: ${err}'; continue }
-					status = 'Marked ${target} invalid locally: ${text.trim_space()}'
+					api.mark_invalid(mark_target, text) or { status = 'error: ${err}'; continue }
+					status = 'Marked ${mark_name} invalid locally: ${text.trim_space()}'
 				} else {
-					api.unmark_invalid(target) or { status = 'error: ${err}'; continue }
-					invalid = api.invalid_marks() or { status = 'error: ${err}'; continue }
-					status = 'Removed local invalid tag from ${target}'
+					api.unmark_invalid(mark_target) or { status = 'error: ${err}'; continue }
+					status = 'Removed local invalid tag from ${mark_name}'
 				}
+				marks = api.marks() or { status = 'error: ${err}'; continue }
+				marks_stamp = api.marks_stamp()
 				changed = [true, true, true, true, true]
 			}
 			'\n', '\r', 'e', 'r', 'b', 'n', 'N', 's', 'C', 'M', '?' {
@@ -1265,19 +1376,19 @@ fn tui(initial_api Repository, initial_label string) {
 				if api.repo != '' { loader.request(api, label, .advisories, true) }
 				loader.request(api, label, .git_status, true)
 			}
-			'a', 'c', 'd', 'p', 'x' {
+			'c', 'd', 'p', 'x' {
 				if id == '' {
 					status = 'no advisory selected'
 					continue
 				}
-				action_key := if k == 'a' { 'c' } else { k }
+				action_key := k
 				if !actions.any(it.starts_with(action_key + ' ')) {
 					status = if action_key == 'c' && advs[ai][2] == 'requested*' {
 						'CVE request already recorded locally; g reload, s status'
 					} else if action_key == 'c' && advs[ai][2] != '-' {
 						'CVE already assigned: ${advs[ai][2]}'
 					} else {
-						'action unavailable for ${advs[ai][1]}; press m for actions'
+						'action unavailable for ${advs[ai][1]}; press a for actions'
 					}
 					continue
 				}
@@ -1287,7 +1398,7 @@ fn tui(initial_api Repository, initial_label string) {
 					continue
 				}
 				verb := match k {
-					'a', 'c' { 'request a CVE for' }
+					'c' { 'request a CVE for' }
 					'd' { if api.provider == 'gitlab' { 'reopen' } else { 'accept/reopen as draft' } }
 					'p' { 'PUBLISH' }
 					else { 'close' }

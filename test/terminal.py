@@ -161,7 +161,7 @@ def checks(binary, root):
                 resize(ui, screen, size)
 
         # Dialogs, confirmation cancellation, help and the filter form also resize.
-        for key in ('m', 'p', '?', 's', '/'):
+        for key in ('a', 'p', '?', 's', '/'):
             ui.send(key)
             if key == 's':
                 ui.expect('j/k: scroll; choose key; Enter/Esc: cancel')

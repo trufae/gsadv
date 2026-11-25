@@ -107,3 +107,55 @@ fn test_local_invalid_tags_preserve_columns_in_every_view_and_width() {
 		}
 	}
 }
+
+// The list tests predate other mark kinds; express invalid tags as marks.
+fn (mut list TuiList) mark_invalid(entries [][]string, reasons map[string]string) {
+	mut marks := map[string]Mark{}
+	for key, reason in reasons {
+		marks[key] = Mark{target: key, reason: reason, kind: 'invalid'}
+	}
+	list.mark(entries, marks, 0)
+}
+
+fn test_marks_order_and_symbols() ! {
+	advs := [['GHSA-one', 'draft', '-', 'low', 'One'], ['GHSA-two', 'draft', '-', 'low', 'Two'],
+		['GHSA-three', 'draft', '-', 'low', 'Three']]
+	mut list := TuiList{}
+	list.rebuild(advs, advs, advisory_links(advs), 0)
+	list.mark(advs, {
+		'ghsa-one':   Mark{kind: 'ignore'}
+		'ghsa-three': Mark{kind: 'pin', reason: 'triage first'}
+	}, 0)
+	list.filter(advs, '', 'all')
+	assert list.visible == [2, 1, 0]
+	assert term.strip_ansi(list.line(2, advs, advs, 0, 120, false)).starts_with('^ ')
+	assert term.strip_ansi(list.line(0, advs, advs, 0, 120, false)).starts_with('- ')
+	list.filter(advs, 'triage first', 'all')
+	assert list.visible == [2]
+	// Reports are keyed by finding ID so the mark survives a move to the attic.
+	report := ['/x/wave1/ANT-1/REPORT.md', 'high', 'UAF', 'ANT-1', 'Title', '', 'CWE-416', 'wave1', '2026-01-01']
+	assert mark_key(report, 4) == 'report:ant-1'
+	assert Mark{kind: 'wip', by: 'analyst', reason: 'fixing'}.describe() == 'wip by analyst: fixing'
+
+	dir := os.join_path(os.temp_dir(), 'gsadv-marks-test-${os.getpid()}')
+	os.setenv('XDG_STATE_HOME', dir, true)
+	defer {
+		os.unsetenv('XDG_STATE_HOME')
+		os.rmdir_all(dir) or {}
+	}
+	api := Repository(GitHub{repo: 'owner/repo'})
+	assert api.marks_stamp() == ''
+	api.set_mark('report:ANT-1', 'pin', '')!
+	pinned := api.marks_stamp()
+	api.set_mark('report:ANT-1', 'wip', ' drafting ')!
+	assert api.marks_stamp() !in ['', pinned]
+	mark := api.marks()!['report:ant-1'] or { Mark{} }
+	assert mark.kind == 'wip' && mark.reason == 'drafting' && mark.time > 0
+	assert api.invalid_marks()!.len == 0
+	if _ := api.set_mark('report:ANT-1', 'bogus', '') { assert false, 'accepted an unknown kind' }
+	if _ := api.set_mark('report:ANT-1', 'invalid', ' ') { assert false, 'accepted invalid without a reason' }
+	api.mark_invalid('report:ANT-1', 'duplicate')!
+	assert api.invalid_marks()! == {'report:ant-1': 'duplicate'}
+	api.unmark_invalid('report:ANT-1')!
+	assert api.marks()!.len == 0
+}

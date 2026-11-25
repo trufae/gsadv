@@ -121,7 +121,7 @@ fn local_git_status() string {
 // Rough display-only ratings from tagged fix subjects, strongest match first.
 fn commit_severity(subject string) string {
 	message := subject.to_lower().replace('##crash', '').replace('##security', '')
-		.replace('##vulnerability', '').replace('##sandbox', '')
+		.replace('##vulnerability', '').replace('##vuln', '').replace('##sandbox', '')
 	text := ' ' + message.bytes().map(if it.is_alnum() { it } else { u8(` `) }).bytestr()
 		.fields().join(' ') + ' '
 	for severity in ['critical', 'high', 'medium', 'low'] {

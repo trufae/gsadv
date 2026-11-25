@@ -25,7 +25,7 @@ fn (api Repository) help_text() string {
 	if api.provider == 'github' { return tui_help }
 	return tui_help.all_before('States:')
 		.replace('C: manage advisory credits (finder, reporter, fix developer and other roles)', 'Credits: use e to edit attribution in the disclosure text')
-		.replace('c (or a): request CVE; d: accept/reopen as draft; p: publish; x: close', 'c (or a): CVE request instructions; d: reopen issue; x: close issue')
+		.replace('c: request CVE; d: accept/reopen as draft; p: publish; x: close', 'c: CVE request instructions; d: reopen issue; x: close issue')
 		.replace('advisories', 'disclosures').replace('advisory', 'disclosure').replace('PR', 'MR') +
 		'States: opened, closed. Confidentiality is shown separately.\nClosing or reopening never changes confidentiality.\nCVE IDs are references in the issue text, not proof of assignment or publication.\nGitLab CVE requests use a separate issue; c shows the instructions.\nPublishing and draft transitions are GitHub-only.'
 }

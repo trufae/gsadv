@@ -50,3 +50,18 @@ fn test_find_reports_skips_attic() {
 	assert find_reports(base, 'wave1/Attic').len == 2
 	assert find_reports(os.join_path(base, 'missing'), 'Attic').len == 0
 }
+
+fn test_move_to_attic() ! {
+	base := os.join_path(os.temp_dir(), 'gsadv-attic-${os.getpid()}')
+	defer { os.rmdir_all(base) or {} }
+	os.mkdir_all(os.join_path(base, 'wave1/ANT-1'))!
+	os.mkdir_all(os.join_path(base, 'ANT-2'))!
+	os.write_file(os.join_path(base, 'wave1/ANT-1/REPORT.md'), 'one')!
+	os.write_file(os.join_path(base, 'ANT-2/REPORT.md'), 'two')!
+	os.write_file(os.join_path(base, 'REPORT.md'), 'top')!
+	assert move_to_attic(os.join_path(base, 'wave1/ANT-1/REPORT.md'), base, 'Attic')! == os.join_path(base, 'wave1/Attic/ANT-1')
+	assert move_to_attic(os.join_path(base, 'ANT-2/REPORT.md'), base, 'old/Attic')! == os.join_path(base, 'old/Attic/ANT-2')
+	assert find_reports(base, 'Attic').len == 1
+	if _ := move_to_attic(os.join_path(base, 'REPORT.md'), base, 'Attic') { assert false, 'moved the base directory' }
+	if _ := move_to_attic(os.join_path(base, 'x/REPORT.md'), base, '') { assert false, 'accepted an empty attic' }
+}

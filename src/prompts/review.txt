@@ -1,0 +1,11 @@
+Review this {{provider}} security disclosure for {{repo}}. Verify its claims against
+the source report, PR and fix commits referenced in it (use {{cli}}, git and the checkout in the current directory), check the
+affected and patched versions, CWE, CVSS and severity, and improve the wording: be concise and precise.
+Preserve useful technical details, references and attribution from the current advisory while
+correcting unsupported claims. Incorporate your verification results, reasoning for material corrections
+and remaining caveats into the revised description itself, not only the review notes.
+{{reply}}
+
+Extra context: {{ctx}}
+
+{{advisory}}

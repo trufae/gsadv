@@ -148,7 +148,7 @@ struct TuiList {
 mut:
 	links []int
 	search []string
-	invalid []string
+	marks []Mark
 	matches []int
 	visible []int
 	formatted map[int]TuiRow
@@ -163,7 +163,7 @@ fn (mut list TuiList) rebuild(entries [][]string, advs [][]string, links Advisor
 	list.state_column = if view in [2, 3] { 3 } else { 1 }
 	list.links = []int{len: entries.len, init: -1}
 	list.search = []string{len: entries.len}
-	list.invalid = []string{len: entries.len}
+	list.marks = []Mark{len: entries.len}
 	for i, entry in entries {
 		linked := if view == 0 { i } else if view != 4 && entry.len > 0 { links.find(entry[0]) } else { -1 }
 		list.links[i] = linked
@@ -173,12 +173,16 @@ fn (mut list TuiList) rebuild(entries [][]string, advs [][]string, links Advisor
 	list.filtered = false
 }
 
-fn (mut list TuiList) mark_invalid(entries [][]string, marks map[string]string) {
+fn mark_key(entry []string, view int) string {
+	if entry.len == 0 { return '' }
+	return if view == 4 && entry.len >= 9 { invalid_key('report:' + entry[3]) } else { invalid_key(entry[0]) }
+}
+
+fn (mut list TuiList) mark(entries [][]string, marks map[string]Mark, view int) {
 	for i, entry in entries {
-		if entry.len == 0 { continue }
-		reason := marks[invalid_key(entry[0])]
-		list.invalid[i] = reason
-		if reason != '' { list.search[i] += ' invalid ' + reason.to_lower() }
+		mark := marks[mark_key(entry, view)] or { Mark{} }
+		list.marks[i] = mark
+		if mark.kind != '' { list.search[i] += ' ${mark.kind} ${mark.reason.to_lower()}' }
 	}
 	list.formatted.clear()
 	list.filtered = false
@@ -188,14 +192,25 @@ fn (mut list TuiList) filter(entries [][]string, query string, state string) {
 	if list.filtered && list.query == query && list.state == state { return }
 	list.query, list.state = query, state
 	list.matches = []int{}
-	list.visible = []int{}
+	mut pinned, mut rest, mut ignored := []int{}, []int{}, []int{}
 	needle := query.to_lower()
 	for i, text in list.search {
 		if needle == '' || text.contains(needle) {
 			list.matches << i
-			if state == 'all' || (entries[i].len > list.state_column && entries[i][list.state_column] == state) { list.visible << i }
+			if state == 'all' || (entries[i].len > list.state_column && entries[i][list.state_column] == state) {
+				// Pinned items lead the list and ignored items trail it.
+				match list.marks[i].kind {
+					'pin' { pinned << i }
+					'ignore' { ignored << i }
+					else { rest << i }
+				}
+			}
 		}
 	}
+	list.visible = []int{cap: pinned.len + rest.len + ignored.len}
+	list.visible << pinned
+	list.visible << rest
+	list.visible << ignored
 	list.filtered = true
 }
 
@@ -213,7 +228,8 @@ fn (mut list TuiList) line(index int, entries [][]string, advs [][]string, view 
 			4 { report_row(entries[index], width) }
 			else { issue_row(entries[index], a, width) }
 		}
-		normal := marked_row(line, list.invalid[index], width)
+		kind := list.marks[index].kind
+		normal := marked_row(if kind == 'ignore' { term.dim(term.strip_ansi(line)) } else { line }, mark_symbol(kind), width)
 		list.formatted[index] = TuiRow{normal, term.inverse(term.strip_ansi(normal))}
 	}
 	line := list.formatted[index]

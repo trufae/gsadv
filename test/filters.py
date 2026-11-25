@@ -47,8 +47,8 @@ def filter_text(ui, text):
 
 
 def selected_advisory(ui, identifier):
-    ui.send('m')
-    ui.expect('Actions for ' + identifier)
+    ui.send('a')
+    ui.expect('Advisory ' + identifier + ':')
     ui.send('\x1b')
     ui.expect('/ text')
 
@@ -86,8 +86,8 @@ def checks(binary, root):
         selected_advisory(ui, 'GHSA-two')
         ui.send('f')
         ui.expect('No matches.')
-        ui.send('m')
-        ui.expect('no advisory selected')
+        ui.send('a')
+        ui.expect('no item selected')
         ui.send('F')
         ui.expect('advisories 1 (all)')
         for cancel in ['\x1b', '\x03', '\x04']:

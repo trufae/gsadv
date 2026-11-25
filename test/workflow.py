@@ -263,7 +263,7 @@ def github_patch_checks(binary, root):
            'GH_PATCH_MODE': 'current'}
     with Terminal(binary, root, 'tui', env, controlling=True) as ui:
         ui.expect('Test advisory')
-        ui.expect('C credits')
+        ui.expect('a actions')
         ui.send('n')
         ui.expect('commit or issue/PR URL')
         ui.send('abcdef1234\n')
@@ -271,7 +271,7 @@ def github_patch_checks(binary, root):
         assert 'Workflow exited' not in screen, screen
         assert PATCH in json.loads((root / 'ai.prompts').read_text().splitlines()[-1])
         ui.send('\n')
-        ui.expect('C credits')
+        ui.expect('a actions')
         ui.send('q')
         ui.finish()
 
@@ -316,7 +316,7 @@ def tui_checks(binary, root):
         screen = ui.expect('Press Enter to return')
         assert 'summary: Second review' in screen and 'Final text' in screen, screen
         ui.send('\x1b')
-        ui.expect('C credits')
+        ui.expect('a actions')
         ui.send('q')
         ui.finish()
 
@@ -329,18 +329,18 @@ def tui_checks(binary, root):
     sessions = set(root.glob('gsadv-*'))
     with Terminal(binary, root, 'tui', env) as ui:
         ui.expect('GHSA-test')
-        ui.expect('C credits')
+        ui.expect('a actions')
         for cancel in ('\x03', '\x1b', '\x04'):
             ui.send('r')
             screen = ui.expect('extra context (optional):')
             assert 'Example: Check the affected versions' in screen
             assert 'Ctrl+C or Esc to cancel' in screen
             ui.send('unfinished context' + cancel)
-            ui.expect('C credits')
+            ui.expect('a actions')
         ui.send('n')
         ui.expect('commit or issue/PR URL')
         ui.send('\x03')
-        ui.expect('C credits')
+        ui.expect('a actions')
         ui.send('\x03')
         ui.finish()
     assert (root / 'ai.calls').read_text() == ai_calls
@@ -351,7 +351,7 @@ def tui_checks(binary, root):
     (root / 'editor-buffer').unlink()
     with Terminal(binary, root, 'tui', env, controlling=True) as ui:
         ui.expect('GHSA-test')
-        ui.expect('C credits')
+        ui.expect('a actions')
         ui.send('r')
         ui.expect('extra context (optional):')
         ui.send('\n')
@@ -361,7 +361,7 @@ def tui_checks(binary, root):
         assert 'Saved changes to' not in screen
         assert not (root / 'editor-buffer').exists()
         ui.send('\n')
-        ui.expect('C credits')
+        ui.expect('a actions')
         ui.send('q')
         ui.finish()
 
@@ -371,7 +371,7 @@ def tui_checks(binary, root):
     (root / 'ai.stopped').unlink(missing_ok=True)
     with Terminal(binary, root, 'tui', env | {'AI_WAIT': '1'}, controlling=True) as ui:
         ui.expect('GHSA-test')
-        ui.expect('C credits')
+        ui.expect('a actions')
         ui.send('r')
         ui.expect('extra context (optional):')
         context = 'Check affected versions and whether the fix addresses the root cause; $(touch should-not-exist)'
@@ -384,7 +384,7 @@ def tui_checks(binary, root):
             time.sleep(0.02)
         ui.send('\x03')
         ui.expect('cancelled; recovery files')
-        ui.expect('C credits')
+        ui.expect('a actions')
         assert (directory / 'reply.txt').read_text() == 'partial TUI analysis\n'
         assert 'Extra context: ' + context in (directory / 'prompt.txt').read_text()
         assert not (root / 'should-not-exist').exists()
@@ -397,13 +397,13 @@ def tui_checks(binary, root):
     # Interrupting an editor that changed terminal modes also returns safely.
     with Terminal(binary, root, 'tui', env | {'EDITOR_MODE': 'wait'}, controlling=True) as ui:
         ui.expect('GHSA-test')
-        ui.expect('C credits')
+        ui.expect('a actions')
         ui.send('e')
         screen = ui.expect('Editor ready')
         directory = saved_dir(screen.replace('\r', ''))
         ui.send('\x03')
         ui.expect('cancelled; recovery files')
-        ui.expect('C credits')
+        ui.expect('a actions')
         assert (directory / 'edit.md').read_text() == ORIGINAL
         assert termios.tcgetattr(ui.slave)[1] == ui.attributes[1], 'editor output mode not restored'
         ui.send('q')
@@ -413,7 +413,7 @@ def tui_checks(binary, root):
     (root / 'reply').write_text(REPLY)
     with Terminal(binary, root, 'tui', env | {'EDITOR_MODE': 'broken'}, controlling=True) as ui:
         ui.expect('GHSA-test')
-        ui.expect('C credits')
+        ui.expect('a actions')
         ui.send('r')
         ui.expect('extra context (optional):')
         ui.send('\n')
@@ -421,7 +421,7 @@ def tui_checks(binary, root):
         directory = saved_dir(screen.replace('\r', ''))
         ui.send('\x03')
         ui.expect('cancelled; recovery files')
-        ui.expect('C credits')
+        ui.expect('a actions')
         assert (directory / 'review.diff').read_text().endswith('broken line\n')
         ui.send('q')
         ui.finish()

@@ -383,7 +383,7 @@ def tui_smoke(binary, root, env):
         assert 'Fixed in: 2 (released)' in details and 'parser: < 2' in details
         os.write(master, b'\x1b')
         until('disclosures')
-        os.write(master, b'm')
+        os.write(master, b'a')
         menu = until('Choose a key')
         assert 'CVE request instructions' in menu and 'p publish' not in menu
         os.write(master, b'c')
@@ -395,8 +395,8 @@ def tui_smoke(binary, root, env):
         local_reason = ('Not shipped; introduced after the previous release and fixed before '
                         'the next release. ' * 3 + 'END OF SAVED REASON')
         os.write(master, (local_reason + '\r').encode())
-        tagged = until('Local invalid tag (i reason, I clear): Not shipped')
-        assert '[invalid]' not in tagged
+        tagged = until('! invalid')
+        assert '! invalid' in tagged and 'Not shipped' in tagged and '[invalid]' not in tagged
         assert re.search(r'! .*GL-42', tagged), tagged
         os.write(master, b'i')
         saved = until('e: edit reason; Enter/Esc: back')
@@ -405,7 +405,7 @@ def tui_smoke(binary, root, env):
         os.write(master, b'e')
         until('Reason:')
         os.write(master, b'\x1b')
-        until('Local invalid tag (i reason, I clear): Not shipped')
+        until('! invalid')
         os.write(master, b'I')
         until('Removed local invalid tag')
         os.write(master, b'\t')
@@ -437,9 +437,9 @@ def tui_smoke(binary, root, env):
         until('Review source with AI.')
         os.write(master, b'\x1b')
         until('[MRs ')
-        os.write(master, b'm')
+        os.write(master, b'a')
         menu = until('Choose a key')
-        assert 'M post discussion comment' in menu
+        assert 'M post a discussion comment' in menu
         os.write(master, b'\x1b')
         until('[MRs ')
         os.write(master, b'/')

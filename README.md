@@ -15,8 +15,12 @@ Press `N` to write a draft by hand in `$EDITOR`, starting from an advisory templ
 Fill in the fields and sections or paste a complete advisory; leaving the template
 unchanged or emptying it cancels. `gsadv new` opens the same template from the CLI.
 Lowercase `n` and `gsadv new <commit|url>` draft with AI.
+Press `a` for the actions that apply to the selected item in the current tab
+(similar bugs, credits, CVE and state changes, comments, ...); each still has its
+direct key, listed in `?` help.
 Use `J`/`K` or AvPág/RePág (Page Down/Page Up) to move down/up ten rows.
 Switch to the next/previous tab with Tab/Shift-Tab, `l`/`h` or the right/left arrows.
+`H`/`L` jump to the first/last tab.
 The shared issue/PR/MR label filter is the `label` setting (press `,`); an empty
 value shows all labels. Results appear page by page while the remaining history
 loads in the background. Changing the label takes effect after the current page finishes.
@@ -26,7 +30,7 @@ filters are remembered separately for each tab and combine with the label and
 `/` (text) filters.
 
 The commits tab only lists commits whose message matches the `grep` setting
-(default `##(crash|security|vulnerability|sandbox)`), a `git log -E --grep` regex;
+(default `##(crash|security|vuln|sandbox)`), a `git log -E --grep` regex;
 an empty value shows all commits.
 
 The Reports tab lists every `REPORT.md` below the `antfind` directory (default
@@ -37,22 +41,39 @@ severity. The severity circle uses the advisory colors; ⚫ marks reports tagged
 `[NOT SECURITY]`. The type column (UAF, DOUBLE-FREE, STACK-OVF, HEAP-OVF,
 OOB-READ, INT-UNDERFLOW, CMD-INJ, OOM, HANG, ...) is derived from the CWE, or from
 keywords in the title or body when the CWE is missing or unknown. Press `f`/`F`
-to filter by severity, Enter to read a report and `e` to edit it.
+to filter by severity, Enter to read a report and `e` to edit it. `t` moves the
+finding's directory into the attic next to it (`wave1/X` becomes `wave1/Attic/X`;
+an `attic` value containing `/` is a path below `antfind`). `x`, or
+`gsadv fix <REPORT.md> [context]`, asks the AI agent to reproduce the bug, fix the
+root cause and add a regression test in the checkout, then commit it locally (never
+push) with a subject tagged `##crash`, `##sandbox`, `##security` or `##vuln` and the
+report referenced on the third line as `* OSS-SCAN - <report id>`. Unverified fixes
+stay uncommitted. The agent's summary is shown when it finishes. The default Claude preset runs with
+`--permission-mode acceptEdits` for this; a custom `GSADV_AI` command uses its own
+permissions. The prompt is `src/prompts/fix.txt`.
 
 Press `,` to open the settings screen (`grep`, `label`, `antfind`, `attic`): move
 with `j`/`k` or the arrows, press Enter to change a value and `d` to reset it to the
 default. Changes apply when you leave the screen and are saved per project in
 `.gsadv.ini` at the root of the Git checkout (or the current directory outside Git),
 one `key=value` per line; `#` and `;` start comments. Other `gsadv` settings, such
-as `ai`, can also be set there. `GSADV_*` environment variables and the `--label`/
+as `ai`, can also be set there. The AI prompts are text files in `src/prompts`,
+embedded at build time. `GSADV_*` environment variables and the `--label`/
 `--grep` flags override the file for that run (the screen marks such values as not
 saved), and the file overrides `git config gsadv.*`.
 
-A `!` in the left margin marks a saved local invalid tag. These are manual triage
-decisions with a reason, separate from advisory and release state. Selecting a
-tagged item shows its reason below the list; press `i` to read or edit the full
-reason, or `I` to clear the tag. From the CLI, use `gsadv invalid <id|commit|url>`
-to read the reason and `gsadv unmark <id|commit|url>` to clear it.
+Press `m` to mark the selected item: `*` important, `@` work in progress, `^` pin
+(listed first), `-` ignore (dimmed, listed last) or `!` invalid (requires a reason).
+Each item has one mark, with an optional note and the user and time that set it,
+shown below the list when the item is selected. Marks are stored in the local state
+directory per repository and item, and every running `gsadv` for the repository
+picks up changes within about a second, so analysts in several terminals see who
+is working on what. Reports are marked by finding ID, which survives moving them to
+the attic. Marks are manual triage decisions, separate from advisory and release
+state. `i` and `I` remain shortcuts to set an invalid reason and remove a mark.
+From the CLI, `gsadv ls`, `log` and `issues` show the mark symbols,
+`gsadv invalid <id|commit|url>` reads an invalid reason and
+`gsadv unmark <id|commit|url>` removes a mark.
 
 ## Install
 

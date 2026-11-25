@@ -130,10 +130,10 @@ def tui_checks(binary, root):
     env = {'GSADV_AI': 'ai', 'EDITOR': 'editor'}
     with Terminal(binary, root, 'tui', env, controlling=True) as ui:
         ui.expect('GHSA-test')
-        ui.expect('b similar bugs')
+        ui.expect('a actions')
         # Both the actions menu and the post-view advisory prompt expose the action.
-        ui.send('m')
-        ui.expect('b Find similar bugs')
+        ui.send('a')
+        ui.expect('b find similar bugs')
         ui.send('b')
         ui.expect('extra context (optional):')
         ui.send('Check parser callers\n')
@@ -148,14 +148,14 @@ def tui_checks(binary, root):
         ui.expect('Findings report saved')
         ui.expect('Press Enter to return')
         ui.send('\n')
-        ui.expect('b similar bugs')
+        ui.expect('a actions')
 
         before = (root / 'ai.calls').read_text()
         for cancel in ['\x1b', '\x03', '\x04']:
             ui.send('b')
             ui.expect('extra context (optional):')
             ui.send('unfinished' + cancel)
-            ui.expect('b similar bugs')
+            ui.expect('a actions')
         assert (root / 'ai.calls').read_text() == before
 
         ui.send('\t')
@@ -171,7 +171,7 @@ def tui_checks(binary, root):
             assert PATCH in prompt
             assert ('Linked advisory:' in prompt) == (commit == COMMIT)
             ui.send('\n')
-            ui.expect('b similar bugs')
+            ui.expect('a actions')
             ui.send('j')
         ui.send('q')
         ui.finish()
@@ -192,7 +192,7 @@ def tui_checks(binary, root):
     # Ctrl+C during the search returns to the list and preserves a resumable partial report.
     with Terminal(binary, root, 'tui', env | {'AI_WAIT': '1'}, controlling=True) as ui:
         ui.expect('GHSA-test')
-        ui.expect('b similar bugs')
+        ui.expect('a actions')
         ui.send('b')
         ui.expect('extra context (optional):')
         ui.send('\n')
@@ -204,7 +204,7 @@ def tui_checks(binary, root):
             time.sleep(0.02)
         ui.send('\x03')
         ui.expect('cancelled; recovery files')
-        ui.expect('b similar bugs')
+        ui.expect('a actions')
         assert (directory / 'reply.txt').read_text() == REPORT
         ui.send('q')
         ui.finish()

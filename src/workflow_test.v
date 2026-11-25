@@ -291,3 +291,15 @@ fn test_cli_accepts_recovery_directory() ! {
 		assert false, 'accepted an unknown option'
 	}
 }
+
+fn test_render_prompts() {
+	assert render('a {{x}} {{y}} {{', {
+		'x': '{{y}}'
+	}) == 'a {{y}} {{y}} {{'
+	for template in [prompt_new, prompt_review, prompt_source_review, prompt_similar] {
+		assert template.contains('{{repo}}') && template.contains('{{ctx}}')
+	}
+	api := Repository(GitLab{provider: 'gitlab'})
+	reply := api.reply_instructions()
+	assert reply.contains('summary: <one line title') && !reply.contains('{{') && reply.ends_with(prompt_gitlab)
+}

@@ -1,0 +1,11 @@
+summary: <one line title, under 100 chars>
+severity: <low|medium|high|critical>
+cvss: <CVSS:3.1/... vector, or empty>
+cwe: <CWE-nnn, ...>
+credits: <github_login:finder, ... or empty>
+package: <package name>
+ecosystem: other
+affected: <vulnerable version range, e.g. < 5.9.8>
+patched: <first patched version, e.g. 5.9.8>
+---
+<markdown description: Impact, Details (root cause), Proof of concept, Patches, References>

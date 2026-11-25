@@ -11,6 +11,8 @@ GitLab disclosures stored as confidential labeled issues.
 - `src/tui.v` contains terminal views, formatting, navigation and action prompts.
 - `src/workflow.v` handles AI, editor and advisory review workflows; `src/advisory.v`
   defines the advisory types, editable format parser and source linking.
+- `src/prompts/*.txt` hold the AI prompts, embedded with `$embed_file` and filled by
+  `render()` in `src/workflow.v` (`{{name}}` placeholders).
 - `src/sources.v` parses commit/issue/PR inputs and discovers local fix commits.
 - `src/settings.v` reads and writes the per-project `.gsadv.ini` and draws the settings
   screen; `src/reports.v` finds, classifies and formats `REPORT.md` files for the Reports tab.

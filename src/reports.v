@@ -222,3 +222,18 @@ fn report_row(r []string, w int) string {
 	}
 	return clip_line(line, line_width(w))
 }
+
+// Move the finding's directory into the attic next to it (wave1/X -> wave1/Attic/X),
+// or below base when attic is a path such as wave1/Attic.
+fn move_to_attic(path string, base string, attic string) !string {
+	name := attic.trim('/')
+	if name == '' { return error('the attic setting is empty; press , to set it') }
+	dir := os.dir(path)
+	if dir.trim_right('/') == base.trim_right('/') { return error('${path} is not in a finding directory') }
+	parent := if name.contains('/') { os.join_path(base, name) } else { os.join_path(os.dir(dir), name) }
+	dest := os.join_path(parent, os.file_name(dir))
+	if os.exists(dest) { return error('${dest} already exists') }
+	os.mkdir_all(parent)!
+	os.rename(dir, dest)!
+	return dest
+}

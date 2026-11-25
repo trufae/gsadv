@@ -1,0 +1,1 @@
+This disclosure is stored as a confidential GitLab issue. Credits and security metadata are text in its description, not native GitLab advisory fields. Record any assigned CVE IDs in References. Use glab for authenticated GitLab requests.

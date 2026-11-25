@@ -1,0 +1,24 @@
+Write a self-contained advisory: readers must not need your private review notes.
+Put all useful technical findings in the Markdown description after the --- separator, including
+the root cause and affected functions, attack preconditions, impact and its limits, CWE/CVSS reasoning,
+reproduction steps and results, introduction/fix commits and release evidence, and available mitigations.
+Include relevant uncertainty, missing evidence and verification limits in the description too;
+distinguish tests actually run from suggested tests and confirmed facts from unverified claims.
+Include references to related findings, reports and advisories with their original IDs, source links
+and relationship to this vulnerability (duplicate, variant, shared root cause or separate issue).
+Preserve existing references and attribution unless evidence shows they are incorrect.
+Always include the credits field, even when empty. If credits are missing or incomplete, investigate
+commit messages, linked reports and related findings and fill in verified GitHub logins with the
+appropriate finder, reporter, tool or other supported credit role; do not merely note missing credits.
+Put names, handles and scan references (such as OSS-SCAN and scan-coverity with their full IDs) not
+captured in credits in Acknowledgements, with source links. Do not invent usernames from scan IDs
+or assume the fix author discovered the vulnerability. State unresolved attribution in the description
+when relevant, leaving credits empty if no GitHub login can be verified.
+Use the relevant sections (Impact, Details, Proof of concept, Patches, Workarounds, References,
+Acknowledgements) as needed; do not invent evidence or fill sections with unsupported claims.
+Before replying, check that every substantive finding or caveat in your notes also appears in the
+advisory where it belongs. Notes and header comments are discarded when saving to GitHub.
+Keep any leading notes brief and editorial (verdict and change summary only), then put the advisory
+last in your reply, in exactly this format and without wrapping it in code fences:
+
+{{format}}

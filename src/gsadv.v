@@ -30,6 +30,7 @@ const help = 'Usage: gsadv [-r namespace/repo|url] [--provider github|gitlab] [-
   review <id|commit|url> [context] review an advisory or source with AI, then edit
   comment <issue|PR URL> [text] edit a discussion comment, then confirm posting
   similar <id|commit|url> [context] find similar bugs using the selection as a template
+  fix <REPORT.md> [context] ask the AI to fix the reported bug and commit it locally
   resume <directory>       continue saved work without running the AI again
   recover <log|directory> [opts] turn a saved claude.jsonl into Markdown (partial replies)
   cve <id>                 GitHub: request CVE; GitLab: show CVE request instructions
@@ -39,7 +40,7 @@ const help = 'Usage: gsadv [-r namespace/repo|url] [--provider github|gitlab] [-
   close <id>               close the advisory/disclosure
   reopen <id>              reopen a closed advisory/disclosure
   invalid <id|commit|url> [reason] show its local tag, or mark invalid with a reason
-  unmark <id|commit|url>  remove its local invalid tag
+  unmark <id|commit|url>  remove its local mark (invalid, important, wip, pin or ignore)
 GitLab disclosure IDs use GL-<issue number>; publish/draft/credits are GitHub-only.
 Environment:
   GSADV_PROVIDER  github or gitlab (default: detect from Git remote or source URL)
@@ -47,7 +48,7 @@ Environment:
   GSADV_REMOTE    Git remote to use instead of upstream/origin
   GSADV_ADVISORY_LABEL  GitLab disclosure label (default: security-advisory)
   GSADV_REPO   default repository (otherwise taken from the cwd checkout)
-  GSADV_GREP   git log -E --grep (default: ##(crash|security|vulnerability|sandbox); empty: all commits)
+  GSADV_GREP   git log -E --grep (default: ##(crash|security|vuln|sandbox); empty: all commits)
   GSADV_LABEL  issues/PRs label (default: cve; empty: all labels; includes open and closed items)
   --label and --grep override these settings; use an empty value to disable a filter.
   Per-repository defaults: git config --local gsadv.label security; git config --local gsadv.grep fix
@@ -126,25 +127,25 @@ fn main() {
 	}
 	match cmd {
 		'ls' {
-			marks := api.invalid_marks()!
+			marks := api.marks()!
 			rows := api.advisories_with_releases(id)!
 			println(marked_row(advisory_columns(999), '', 999))
 			for r in rows {
-				println(marked_row(row(r, 999), marks[invalid_key(r[0])], 999))
+				println(marked_row(row(r, 999), mark_symbol((marks[invalid_key(r[0])] or { Mark{} }).kind), 999))
 			}
 		}
 		'log' {
-			marks := api.invalid_marks()!
+			marks := api.marks()!
 			advs := api.advisories('')!
 			for c in commits()! {
-				println(marked_row(crow(c, advs, 999), marks[invalid_key(c[0])], 999))
+				println(marked_row(crow(c, advs, 999), mark_symbol((marks[invalid_key(c[0])] or { Mark{} }).kind), 999))
 			}
 		}
 		'issues' {
-			marks := api.invalid_marks()!
+			marks := api.marks()!
 			advs := api.advisories('')!
 			for item in api.issues(issue_label(args))! {
-				println(marked_row(irow(item, advs, 999), marks[invalid_key(item[0])], 999))
+				println(marked_row(irow(item, advs, 999), mark_symbol((marks[invalid_key(item[0])] or { Mark{} }).kind), 999))
 			}
 		}
 		'invalid', 'unmark' {
@@ -208,6 +209,12 @@ fn main() {
 		}
 		'similar' {
 			cmd_similar(api, id, ctx) or {
+				eprintln('error: ${err}')
+				exit(1)
+			}
+		}
+		'fix' {
+			cmd_fix(api, id, ctx) or {
 				eprintln('error: ${err}')
 				exit(1)
 			}

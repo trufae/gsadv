@@ -12,7 +12,7 @@ struct ProjectSetting {
 }
 
 const project_settings = [
-	ProjectSetting{'grep', '##(crash|security|vulnerability|sandbox)', 'commits tab: git log -E --grep regex; empty shows all commits'},
+	ProjectSetting{'grep', '##(crash|security|vuln|sandbox)', 'commits tab: git log -E --grep regex; empty shows all commits'},
 	ProjectSetting{'label', 'cve', 'issues and PRs/MRs tabs: label filter; empty shows all labels'},
 	ProjectSetting{'antfind', 'ANTFIND', 'directory searched for REPORT.md files, relative to the project root'},
 	ProjectSetting{'attic', 'Attic', 'directory name (or path below antfind) skipped by the Reports tab; empty skips nothing'},

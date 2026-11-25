@@ -2,17 +2,7 @@ module main
 
 const states = ['all', 'triage', 'draft', 'published', 'closed']
 
-const format = 'summary: <one line title, under 100 chars>
-severity: <low|medium|high|critical>
-cvss: <CVSS:3.1/... vector, or empty>
-cwe: <CWE-nnn, ...>
-credits: <github_login:finder, ... or empty>
-package: <package name>
-ecosystem: other
-affected: <vulnerable version range, e.g. < 5.9.8>
-patched: <first patched version, e.g. 5.9.8>
----
-<markdown description: Impact, Details (root cause), Proof of concept, Patches, References>'
+const format = $embed_file('prompts/format.txt').to_string().trim_right('\n')
 
 fn advisory_template(name string) string {
 	return '# Fill in the fields and sections below, or paste a complete advisory in this format.
