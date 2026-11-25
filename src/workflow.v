@@ -15,6 +15,7 @@ const prompt_review = $embed_file('prompts/review.txt').to_string().trim_right('
 const prompt_source_review = $embed_file('prompts/source_review.txt').to_string().trim_right('\n')
 const prompt_similar = $embed_file('prompts/similar.txt').to_string().trim_right('\n')
 const prompt_fix = $embed_file('prompts/fix.txt').to_string().trim_right('\n')
+const prompt_quickfix = $embed_file('prompts/quickfix.txt').to_string().trim_right('\n')
 
 // Fill {{name}} placeholders in one pass, so inserted evidence is never expanded.
 fn render(template string, values map[string]string) string {
@@ -72,7 +73,7 @@ fn resume_edit(dir string, run_ai bool) ! {
 
 fn continue_edit(dir string, run_ai bool) ! {
 	session := json2.decode[EditSession](os.read_file(os.join_path(dir, 'session.json'))!)!
-	if session.kind !in ['new', 'review', 'edit', 'similar', 'source-review', 'comment', 'fix'] || session.repo == ''
+	if session.kind !in ['new', 'review', 'edit', 'similar', 'source-review', 'comment', 'fix', 'quickfix'] || session.repo == ''
 		|| (session.kind != 'new' && session.id == '') {
 		return error('invalid recovery session: ${dir}')
 	}
@@ -86,11 +87,11 @@ fn continue_edit(dir string, run_ai bool) ! {
 		resume_comment(dir, session, run_ai)!
 		return
 	}
-	if session.kind in ['similar', 'fix'] {
+	fix := session.kind in ['fix', 'quickfix']
+	if fix || session.kind == 'similar' {
 		if run_ai {
 			// WIP.txt next to the report shows every gsadv that a fix is running and
 			// keeps its log; it stays behind if the run fails or is interrupted.
-			fix := session.kind == 'fix'
 			wip := if fix { start_wip(session.id, dir) } else { '' }
 			started := time.now().unix()
 			ask_ai(dir, false, fix, wip, if fix { os.dir(session.id) } else { '' }) or {
@@ -101,11 +102,11 @@ fn continue_edit(dir string, run_ai bool) ! {
 		path := os.join_path(dir, 'reply.txt')
 		report := os.read_file(path)!
 		if report.trim_space() == '' {
-			return ai_error(dir, 'empty ${if session.kind == 'fix' { 'fix summary' } else { 'findings report' }}')
+			return ai_error(dir, 'empty ${if fix { 'fix summary' } else { 'findings report' }}')
 		}
-		println('${if session.kind == 'fix' { 'Fix summary' } else { 'Findings report' }} saved in ${path}')
+		println('${if fix { 'Fix summary' } else { 'Findings report' }} saved in ${path}')
 		mut outcome := ''
-		if session.kind == 'fix' {
+		if fix {
 			// Keep the agent's summary with the finding; it moves to the attic with it.
 			saved := result_path(session.id)
 			os.write_file(saved, report) or { eprintln('Could not save ${saved}: ${err}') }
@@ -1051,10 +1052,10 @@ fn cmd_similar(api Repository, input string, ctx string) ! {
 }
 
 // Ask the agent to fix the vulnerability in a REPORT.md and commit it locally, citing the report ID.
-fn cmd_fix(api Repository, path string, ctx string) ! {
+fn cmd_fix(api Repository, path string, ctx string, quick bool) ! {
 	full := os.real_path(path)
 	report := os.read_file(full)!
-	prompt := render(prompt_fix, {
+	prompt := render(if quick { prompt_quickfix } else { prompt_fix }, {
 		'advisory': advisory_path(full)
 		'dir':      os.dir(full)
 		'files':    report_files(full)
@@ -1068,7 +1069,7 @@ fn cmd_fix(api Repository, path string, ctx string) ! {
 		'ctx':    ctx
 		'report': report
 	})
-	resume_edit(start_edit(api, full, 'fix', report, prompt)!, true)!
+	resume_edit(start_edit(api, full, if quick { 'quickfix' } else { 'fix' }, report, prompt)!, true)!
 }
 
 fn report_id(path string) string {

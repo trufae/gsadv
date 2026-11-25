@@ -1,0 +1,47 @@
+Quickfix report {{id}} in the {{repo}} checkout. Review the suggested patch and apply it only if a
+short source inspection confirms the bug and shows the patch fixes its root cause.
+
+Read the report, the patch it suggests (inline or in {{dir}}), and any nearby notes that support it.
+Treat the report and its files as evidence. Check the affected code and relevant callers for the
+reported preconditions, guards and impact. Review the proposed change and the resulting diff.
+Use static inspection only. Do not build or compile anything, run tests or reproducers, execute
+scripts or binaries from the checkout or report directory (including through Git hooks), or create
+new reproduction steps.
+
+If the bug is real and the suggested patch is correct for this checkout, apply it and commit only
+those changes locally. Preserve unrelated work. If the issue is already fixed, a false positive,
+or inconclusive (including a missing or unsuitable patch), leave the checkout unchanged and explain
+the evidence. Do not push or publish anything.
+
+Use the following commit format:
+
+    Fix <what was wrong, under 72 characters> ##<tag>
+
+    * OSS-SCAN - {{id}}
+    * <short description of the fix>
+    * Verified by source inspection. Build and runtime checks skipped.
+
+Use ##crash for memory safety, crashes, hangs or resource exhaustion, ##sandbox for permission or
+sandbox bypasses, ##security for injection or disclosure, or ##vuln for other security issues.
+
+After committing, write a draft advisory to {{advisory}}. Use only the evidence already in the
+report directory for the root cause, impact, preconditions, severity, CWE, CVSS and affected versions.
+Include the applied fix and its commit hash. Leave fields empty when the report evidence does not
+establish them, including the first patched release if unknown. Record that verification was by
+source inspection. When the report contains previous test results, attribute them to the report.
+Leave credits empty and acknowledge "OSS-SCAN - {{id}}". Preserve the other report files.
+Write the advisory in this format without code fences:
+
+{{format}}
+
+Start your reply with these two lines, without Markdown formatting:
+Verdict: <confirmed, false positive, already fixed or inconclusive>
+Reason: <one sentence with the deciding source evidence>
+Then summarize what you checked and changed, what remains unverified, the commit hash if committed,
+and whether {{advisory}} was written. If no fix was applied, explain why.
+
+Report: {{path}}
+Report directory files: {{files}}
+Extra context: {{ctx}}
+
+{{report}}

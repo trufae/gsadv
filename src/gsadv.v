@@ -31,6 +31,7 @@ const help = 'Usage: gsadv [-r namespace/repo|url] [--provider github|gitlab] [-
   comment <issue|PR URL> [text] edit a discussion comment, then confirm posting
   similar <id|commit|url> [context] find similar bugs using the selection as a template
   fix <REPORT.md> [context] ask the AI to fix the reported bug and commit it locally
+  quickfix <REPORT.md> [context] review and apply the suggested patch without builds or tests
   resume <directory>       continue saved work without running the AI again
   recover <log|directory> [opts] turn a saved claude.jsonl into Markdown (partial replies)
   cve <id>                 GitHub: request CVE; GitLab: show CVE request instructions
@@ -213,8 +214,8 @@ fn main() {
 				exit(1)
 			}
 		}
-		'fix' {
-			cmd_fix(api, id, ctx) or {
+		'fix', 'quickfix' {
+			cmd_fix(api, id, ctx, cmd == 'quickfix') or {
 				eprintln('error: ${err}')
 				exit(1)
 			}

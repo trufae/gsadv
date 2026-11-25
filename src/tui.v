@@ -251,8 +251,10 @@ g: reload; A: cycle AI agent
 ,: project settings saved in .gsadv.ini: issues/PRs/MRs label (empty shows all labels),
    commits git log -E --grep regex (empty shows all), Reports antfind and attic directories
 Reports: REPORT.md files under antfind, skipping attic; enter views, e edits, f/F severity,
-   x asks the AI to confirm the bug with a reproducer, then fix and commit it locally (OSS-SCAN - <id>);
-   a false positive is marked invalid. While it runs, the agent output is copied to WIP.txt next to
+   a then f confirms with a reproducer, then fixes and commits locally (OSS-SCAN - <id>).
+   a then F reviews and applies the suggested patch without building or running it, then drafts
+   the advisory from the files already in the report directory.
+   a false positive is marked invalid. While either fix runs, the agent output is copied to WIP.txt next to
    the report (w views it) and STATE shows working, or stopped if the run died. The agent summary
    is then saved as RESULT.md (o views it) and STATE shows its verdict. A confirmed fix also writes
    an advisory draft, ADVISORY.md (d views it); n on the fix commit drafts the advisory from it. b searches for similar bugs using the report
@@ -1105,7 +1107,7 @@ fn tui(initial_api Repository, initial_label string) {
 		// Keep the active view visible when a short terminal only has one header.
 		if layout.head == 1 { headers[0] = headers[1] }
 		item_hints := if view == 4 {
-			['a actions', 'm mark', 'enter view', 'e edit', 'x AI fix', 'o result', 'd advisory', 'b similar', 's similar.md', 't attic', 'g reload']
+			['a actions', 'm mark', 'enter view', 'e edit', 'o result', 'd advisory', 'b similar', 's similar.md', 't attic', 'g reload']
 		} else {
 			['a actions', 'm mark', 'enter view', 'e edit', 'r review', 'n new', 'N manual draft', 'g reload', 'A agent']
 		}
@@ -1122,6 +1124,7 @@ fn tui(initial_api Repository, initial_label string) {
 		mut show_input := input
 		if k == '' { continue }
 		status = ''
+		mut fix_command := ''
 		if k == 'a' {
 			screen.width = 0
 			if view == 4 {
@@ -1130,14 +1133,20 @@ fn tui(initial_api Repository, initial_label string) {
 					continue
 				}
 				k = tui_dialog('Actions for ${report[3]}\n${hint}' + if mark_note == '' { '' } else { '\n${mark_note}' } +
-					'\n\nv view REPORT.md\ne edit REPORT.md in \$EDITOR\nx confirm with a reproducer, then fix and commit locally with AI (false positives are marked invalid)\n' +
+					'\n\nv view REPORT.md\ne edit REPORT.md in \$EDITOR\nf fix with AI after reproducing the bug (commits locally)\n' +
+					'F quickfix with AI using the suggested patch (no builds or tests)\n' +
 					if os.exists(wip_path(report[0])) { 'w view WIP.txt (fix ${report[9]})\n' } else { '' } +
 					if os.exists(result_path(report[0])) { 'o view RESULT.md\n' } else { '' } +
 					if os.exists(advisory_path(report[0])) { 'd view ADVISORY.md (advisory draft from the fix)\n' } else { '' } +
 					'b find similar bugs using it as a template (saved as SIMILAR.md)\n' +
 					if report.len >= 11 && report[10] != '' { 's view SIMILAR.md\n' } else { '' } +
 					't move to the attic (${project_setting('attic')})\nm mark (important, wip, pin, ignore, invalid)\n\nChoose a key; Enter/Esc cancels.')
-				if k == 'v' { k = '\n' } else if k !in ['e', 'x', 'o', 'w', 'd', 'b', 's', 't', 'm'] { continue }
+				if k == 'v' { k = '\n' } else if k !in ['e', 'f', 'F', 'o', 'w', 'd', 'b', 's', 't', 'm'] { continue }
+				fix_command = match k {
+					'f' { 'fix' }
+					'F' { 'quickfix' }
+					else { '' }
+				}
 			} else {
 				if target == '' {
 					status = 'no item selected'
@@ -1200,10 +1209,10 @@ fn tui(initial_api Repository, initial_label string) {
 			changed = [true, true, true, true, true]
 			continue
 		}
-		if pending_action != '' && k in ['q', '\x03', 'c', 'd', 'p', 'x', 't', 'e', 'r', 'n', 'N', 'C', 'M', 'b', '\n', '\r'] {
+		if pending_action != '' && (fix_command != '' || k in ['q', '\x03', 'c', 'd', 'p', 'x', 't', 'e', 'r', 'n', 'N', 'C', 'M', 'b', '\n', '\r']) {
 			continue
 		}
-		if view == 4 && k in ['\n', '\r', 'e', 'x', 'o', 'w', 'd', 'b', 's', 't'] {
+		if view == 4 && (fix_command != '' || k in ['\n', '\r', 'e', 'o', 'w', 'd', 'b', 's', 't']) {
 			if report.len == 0 {
 				status = 'no report selected'
 				continue
@@ -1222,11 +1231,11 @@ fn tui(initial_api Repository, initial_label string) {
 				continue
 			}
 			if k == 'o' && !os.exists(result_path(path)) {
-				status = 'no RESULT.md yet; press x to run a fix'
+				status = 'no RESULT.md yet; press a, then f or F to run a fix'
 				continue
 			}
 			if k == 'd' && !os.exists(advisory_path(path)) {
-				status = 'no ADVISORY.md yet; a confirmed fix (x) writes one'
+				status = 'no ADVISORY.md yet; press a, then f or F to run a fix'
 				continue
 			}
 			if k == 'w' && !os.exists(wip_path(path)) {
@@ -1237,18 +1246,22 @@ fn tui(initial_api Repository, initial_label string) {
 				status = 'no SIMILAR.md yet; press b to search for similar bugs'
 				continue
 			}
-			if k in ['x', 'b'] && api.repo == '' {
+			if (fix_command != '' || k == 'b') && api.repo == '' {
 				status = 'Repository unavailable; wait for loading or press g to retry'
 				continue
 			}
 			cooked()
 			if k == 'e' {
 				sh('${os.getenv_opt('EDITOR') or { 'vi' }} "\$1"', path)
-			} else if k == 'x' {
-				println('Fix ${report[3]} with AI in the checkout; a verified fix is committed locally, never pushed.')
+			} else if fix_command != '' {
+				println(if fix_command == 'quickfix' {
+					'Quickfix ${report[3]} with AI. Review and apply the suggested patch without building or running tests.'
+				} else {
+					'Fix ${report[3]} with AI in the checkout; a verified fix is committed locally, never pushed.'
+				})
 				println('The default Claude preset may edit files; set GSADV_AI to change the agent or its permissions.')
 				if ctx := action_input('Extra context (optional; Enter starts, Esc cancels): ') {
-					tui_workflow(api, 'fix', path, ctx) or {
+					tui_workflow(api, fix_command, path, ctx) or {
 						println('error: ${err}')
 					}
 					action_input('Press Enter to return (Ctrl+C/Esc also returns): ') or {}

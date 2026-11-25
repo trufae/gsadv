@@ -43,7 +43,9 @@ OOB-READ, INT-UNDERFLOW, CMD-INJ, OOM, HANG, ...) is derived from the CWE, or fr
 keywords in the title or body when the CWE is missing or unknown. Press `f`/`F`
 to filter by severity, Enter to read a report and `e` to edit it. `t` moves the
 finding's directory into the attic next to it (`wave1/X` becomes `wave1/Attic/X`;
-an `attic` value containing `/` is a path below `antfind`). `x`, or
+an `attic` value containing `/` is a path below `antfind`).
+
+Press `a` to open the Actions menu. `f` in that menu, or
 `gsadv fix <REPORT.md> [context]`, asks the AI agent to confirm the bug first:
 reports may be false positives, so it must reproduce the crash or bug with a real
 reproducer against code built from the checkout before changing anything. Only a
@@ -52,9 +54,18 @@ pushed) with a subject tagged `##crash`, `##sandbox`, `##security` or `##vuln` a
 the report referenced on the third line as `* OSS-SCAN - <report id>`. The reply
 starts with a verdict (confirmed, false positive, already fixed or inconclusive)
 and its reason, which gsadv prints after the summary; a false positive is marked
-invalid with that reason, so every running gsadv shows it. While the agent runs,
-its output is copied to `WIP.txt` next to `REPORT.md`, whose first line names the
-fixing process; `w` reads it. The summary is then saved as `RESULT.md` (replacing
+invalid with that reason, so every running gsadv shows it.
+
+`F` in the Actions menu, or `gsadv quickfix <REPORT.md> [context]`, checks the
+reported issue and suggested patch by reading the source. If inspection confirms
+the issue and the patch addresses it, the agent applies and commits the patch
+locally and writes `ADVISORY.md` using the evidence already in the finding
+directory. Quickfix skips builds, tests and reproducers. If the patch is missing
+or unsuitable, the agent reports an inconclusive result.
+
+While either fix runs, its output is copied to `WIP.txt` next to `REPORT.md`.
+The first line names the fixing process. Press `w` to read it. The summary is
+then saved as `RESULT.md` (replacing
 an earlier one) and `WIP.txt` is removed; after a failed or interrupted run it stays
 for inspection. These files move to the attic with the finding. The STATE column,
 which every running gsadv refreshes each second, shows `working` during a run,
@@ -62,13 +73,12 @@ which every running gsadv refreshes each second, shows `working` during a run,
 the report (`d` reads it), and otherwise the verdict: `confirmed` (review,
 commit, push or move to the attic), `false-pos`, `fixed-old` (already fixed),
 `unclear` (inconclusive) or `done` (no verdict line). Press `o` to read `RESULT.md`.
-The fix prompt points the agent at the report's directory and lists its files, so it
-can use reproducers, patches and notes kept next to `REPORT.md`. After committing a
-confirmed fix, the agent also writes an advisory draft, `ADVISORY.md`, next to the
-report (never committed; `d` reads it); if the agent leaves it in the checkout
-instead, gsadv moves it next to the report. The fix prompt also
-includes the `antfind` directory so the agent can check other findings for
-duplicates and variants. When you later draft an advisory from the fix commit (`n`
+Both fix prompts point the agent at the report's directory and list its supporting
+files. After committing a confirmed fix, the agent writes `ADVISORY.md` next to
+the report. Press `d` to read it. If the agent leaves the draft in the checkout,
+gsadv moves it next to the report. The full fix prompt includes the `antfind`
+directory so the agent can check other findings for duplicates and variants.
+When you later draft an advisory from the fix commit (`n`
 in the commits tab or `gsadv new <commit>`), gsadv takes the finding ID from the
 commit message (`* OSS-SCAN - ANT-...`), finds the finding under `antfind`, attic
 included, and gives the agent its `ADVISORY.md` to trust as the starting point, or
@@ -79,7 +89,8 @@ may be a false positive) and saves the findings as `SIMILAR.md` next to the repo
 `s` reads it. The default Claude preset runs fixes with
 `--permission-mode acceptEdits`, and the `claude`, `codex` and `pmai` presets get
 `--add-dir <report directory>` so the agent can read it and write `ADVISORY.md`
-there; a custom `GSADV_AI` command uses its own permissions. The prompt is `src/prompts/fix.txt`.
+there; a custom `GSADV_AI` command uses its own permissions. The prompts are
+`src/prompts/fix.txt` and `src/prompts/quickfix.txt`.
 
 Press `,` to open the settings screen (`grep`, `label`, `antfind`, `attic`): move
 with `j`/`k` or the arrows, press Enter to change a value and `d` to reset it to the

@@ -14,6 +14,9 @@ import time
 from urllib.parse import parse_qs, urlsplit
 
 
+FINDING = Path('ANTFIND/ANT-2026-QUICKFIX')
+
+
 def stub():
     args = sys.argv[1:]
     client = Path(sys.argv[0]).name
@@ -23,6 +26,15 @@ def stub():
     if client == 'agent':
         prompt = sys.stdin.read()
         (root / 'prompt').write_text(prompt)
+        if prompt.startswith('Quickfix report '):
+            finding = root / FINDING
+            assert (finding / 'WIP.txt').is_file()
+            (finding / 'ADVISORY.md').write_text('summary: Fixture advisory from static inspection\n')
+            print('Verdict: confirmed\nReason: Source inspection confirms the report and patch.')
+            return
+        if prompt.startswith('Report ANT-2026-QUICKFIX '):
+            print('Verdict: inconclusive\nReason: Fixture did not run a reproducer.')
+            return
         if prompt.startswith('Review this commit, issue or pull/merge request'):
             print('## Review\nCheck the parser bounds before reading.\nVerified the supplied diff.')
             sys.exit(1 if os.environ.get('FAIL_AI') else 0)
@@ -355,6 +367,12 @@ def tui_smoke(binary, root, env):
     import struct
     import termios
 
+    finding = root / FINDING
+    finding.mkdir(parents=True)
+    report = '```\nANT-2026-QUICKFIX  [high]  CWE-476  dos\nFixture report\n```\n'
+    (finding / 'REPORT.md').write_text(report)
+    (finding / 'suggested.patch').write_text('Fixture patch\n')
+
     master, slave = pty.openpty()
     fcntl.ioctl(slave, termios.TIOCSWINSZ, struct.pack('HHHH', 30, 140, 0, 0))
     process = subprocess.Popen([binary], cwd=root, env=dict(env, TERM='xterm-256color'),
@@ -447,7 +465,38 @@ def tui_smoke(binary, root, env):
         os.write(master, b'Fix parser\r')
         until('/Fix parser')
         os.write(master, b'\t')
-        until('[Reports ')
+        until('[Reports 1 (all)]')
+        os.write(master, b'f')
+        until('[Reports 0 (critical)]')
+        os.write(master, b'F')
+        until('[Reports 1 (all)]')
+        os.write(master, b'a')
+        menu = until('Choose a key')
+        assert 'f fix with AI' in menu and 'F quickfix with AI' in menu and 'x confirm' not in menu, menu
+        os.write(master, b'f')
+        until('Extra context')
+        os.write(master, b'\r')
+        until('Press Enter to return')
+        assert 'Build the code, then reproduce the bug' in (root / 'prompt').read_text()
+        assert (finding / 'RESULT.md').read_text().startswith('Verdict: inconclusive')
+        os.write(master, b'\r')
+        until('[Reports 1 (all)]')
+        os.write(master, b'a')
+        until('Choose a key')
+        os.write(master, b'F')
+        until('Extra context')
+        os.write(master, b'Check the guard\r')
+        until('Press Enter to return')
+        prompt = (root / 'prompt').read_text()
+        assert prompt.startswith('Quickfix report ANT-2026-QUICKFIX')
+        assert 'Use static inspection only' in prompt and 'run tests or reproducers' in prompt
+        assert 'Report directory files: suggested.patch' in prompt and report.strip() in prompt
+        assert f'write a draft advisory to {finding.resolve() / "ADVISORY.md"}' in prompt
+        assert 'Extra context: Check the guard' in prompt and '{{' not in prompt
+        assert (finding / 'RESULT.md').read_text().startswith('Verdict: confirmed')
+        assert (finding / 'ADVISORY.md').is_file() and not (finding / 'WIP.txt').exists()
+        os.write(master, b'\r')
+        until('[Reports 1 (all)]')
         os.write(master, b'\t')
         disclosures = until('[disclosures ')
         assert '/released' in disclosures and '/Fix parser' not in disclosures
