@@ -192,6 +192,9 @@ fn test_claude_errors_retain_partial_reply() ! {
 	assert stream.failure.contains('request failed')
 	assert !stream.finished
 	assert os.read_file(path)! == 'partial review'
+	// System notices may carry `message` as a string.
+	stream.feed('{"type":"system","subtype":"permission_denied","tool_name":"Bash","message":"ls was blocked"}\n', path, true)
+	assert stream.failure.contains('request failed')
 	stream.feed('not JSON\n', path, true)
 	assert stream.failure.contains('invalid Claude event')
 	assert os.read_file(path)! == 'partial review'
