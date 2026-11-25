@@ -251,6 +251,32 @@ fn advisory_path(report string) string {
 	return os.join_path(os.dir(report), 'ADVISORY.md')
 }
 
+// Move an ADVISORY.md the fix agent wrote in the checkout since started next to the report,
+// for agents that cannot write outside the current directory.
+fn recover_advisory(report string, started i64) {
+	target := advisory_path(report)
+	stray := os.join_path(os.getwd(), 'ADVISORY.md')
+	if os.exists(target) || !os.is_file(stray) || os.file_last_mod_unix(stray) < started { return }
+	os.mv_by_cp(stray, target) or {
+		eprintln('Could not move ${stray} to ${target}: ${err}')
+		return
+	}
+	println('Moved the advisory draft from the checkout to ${target}')
+}
+
+// Supporting files next to the report (reproducers, patches, notes) for the fix prompt;
+// gsadv's own state files are left out. Directories end with a slash.
+fn report_files(report string) string {
+	dir := os.dir(report)
+	mut names := []string{}
+	for name in os.ls(dir) or { [] } {
+		if name in ['REPORT.md', 'WIP.txt', 'RESULT.md'] { continue }
+		names << if os.is_dir(os.join_path(dir, name)) { name + '/' } else { name }
+	}
+	names.sort()
+	return if names.len == 0 { 'none' } else { names.join(', ') }
+}
+
 // The first finding ID in text, e.g. from "* OSS-SCAN - ANT-2026-6PEMX3GV" in a fix commit.
 fn ant_id(text string) string {
 	mut i := 0

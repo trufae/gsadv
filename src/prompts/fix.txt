@@ -6,6 +6,10 @@ run against code built from this checkout shows it, for example a crash, sanitiz
 out-of-bounds access or the unsafe behaviour the report describes. Reasoning about the code alone does
 not confirm a bug, and neither does a reproducer that only exercises a modified or test-only copy.
 Confirm that the checkout belongs to {{repo}} and record the revision examined.
+The report directory {{dir}} may hold supporting material such as reproducers, patches and notes;
+read it and use what helps, treating it as evidence like the report. Copy a reproducer to a temporary
+directory before running or changing it, and do not modify the report directory except to write
+{{advisory}}.
 Build the code, then reproduce the bug with the report's reproducer or a minimal one, creating test
 inputs in an isolated temporary directory. Check the preconditions the report assumes: reachability
 from real inputs, guards on the path, configuration defaults and the claimed impact.
@@ -22,8 +26,8 @@ mentions, and fix the ones that are reachable.
 Add a regression test that follows the project's existing test conventions when it has a suitable suite.
 Build, then run the reproducer and the relevant tests against the fixed code, and record the results.
 
-When the fix is verified, commit it locally as a single commit; do not commit unrelated changes, the
-report, ADVISORY.md or temporary files. Use this commit message format:
+When the fix is verified, commit it locally as a single commit; do not commit unrelated changes, files
+from the report directory or temporary files. Use this commit message format:
 
     Fix <what was wrong, under 72 characters> ##<tag>
 
@@ -37,7 +41,8 @@ issues, or ##vuln when none of these fits. Leave the second line empty and refer
 third line exactly as shown. If the fix could not be verified, leave the changes uncommitted and explain why.
 Do not push, open PRs/MRs, post comments, edit advisories or modify the report.
 
-After committing a confirmed fix, write a draft security advisory to {{advisory}}, so the analyst
+After committing a confirmed fix, write a draft security advisory to {{advisory}}
+(next to the report, not in the checkout), so the analyst
 can publish it later without repeating this investigation. Base it only on what you verified: the
 root cause and affected functions, attack preconditions, impact and its limits, CWE and CVSS 3.1
 vector, the reproducer and its results, the fix commit hash, the release that introduced the bug
@@ -57,9 +62,10 @@ Verdict: <confirmed, false positive, already fixed or inconclusive>
 Reason: <one sentence with the deciding evidence>
 Then give a concise Markdown summary: root cause, each file changed and why, reproducer and test
 results (distinguish tests actually run from suggested tests), variants or risks left unfixed, the
-commit hash and message, or why nothing was committed, and whether ADVISORY.md was written.
+commit hash and message, or why nothing was committed, and whether {{advisory}} was written.
 
 Report: {{path}}
+Report directory files: {{files}}
 Extra context: {{ctx}}
 
 {{report}}

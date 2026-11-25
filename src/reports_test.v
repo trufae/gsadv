@@ -2,6 +2,7 @@ module main
 
 import os
 import term
+import time
 
 const sample_report = '```
 ============================================================================
@@ -133,4 +134,38 @@ fn test_finding_advisory_context() ! {
 		'finding': context
 	})
 	assert prompt.contains('summary: Verified overflow') && !prompt.contains('{{finding}}')
+}
+
+fn test_fix_agent_reaches_report_directory() ! {
+	dir := os.join_path(os.temp_dir(), 'gsadv-report-dir-${os.getpid()}')
+	checkout := os.join_path(dir, 'checkout')
+	finding := os.join_path(dir, 'ANT-2026-ABCDEFGH')
+	os.mkdir_all(checkout)!
+	os.mkdir_all(os.join_path(finding, 'patches'))!
+	old := os.getwd()
+	defer {
+		os.chdir(old) or {}
+		os.rmdir_all(dir) or {}
+	}
+	report := os.join_path(finding, 'REPORT.md')
+	for name in ['REPORT.md', 'RESULT.md', 'WIP.txt', 'poc.c'] {
+		os.write_file(os.join_path(finding, name), name)!
+	}
+	assert report_files(report) == 'patches/, poc.c'
+	assert agent_command(agents[0], true, finding) == 'claude -p --permission-mode acceptEdits --add-dir "\$3" --output-format stream-json --verbose'
+	assert agent_command(agents[1], true, finding) == 'codex exec --add-dir "\$3" -'
+	assert agent_command(agents[2], true, finding) == 'pmai --add-dir "\$3" --progress "\$(cat)"'
+	assert agent_command(agents[3], true, finding) == agents[3]
+	assert agent_command(agents[1], false, '') == agents[1]
+	assert agent_command(agents[2], false, '') == agents[2]
+	os.chdir(checkout)!
+	stray := os.join_path(checkout, 'ADVISORY.md')
+	os.write_file(stray, 'summary: Overflow\n')!
+	recover_advisory(report, time.now().unix() + 60)
+	assert os.exists(stray) && !os.exists(advisory_path(report))
+	recover_advisory(report, time.now().unix() - 60)
+	assert !os.exists(stray) && os.read_file(advisory_path(report))! == 'summary: Overflow\n'
+	os.write_file(stray, 'other\n')!
+	recover_advisory(report, 0)
+	assert os.exists(stray) && os.read_file(advisory_path(report))! == 'summary: Overflow\n'
 }

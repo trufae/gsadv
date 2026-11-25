@@ -61,8 +61,11 @@ which every running gsadv refreshes each second, shows `working` during a run,
 `stopped` when its process is gone, and then the verdict: `confirmed` (review,
 commit, push or move to the attic), `false-pos`, `fixed-old` (already fixed),
 `unclear` (inconclusive) or `done` (no verdict line). Press `o` to read `RESULT.md`.
-After committing a confirmed fix, the agent also writes an advisory draft,
-`ADVISORY.md`, next to the report (never committed; `d` reads it). The fix prompt
+The fix prompt points the agent at the report's directory and lists its files, so it
+can use reproducers, patches and notes kept next to `REPORT.md`. After committing a
+confirmed fix, the agent also writes an advisory draft, `ADVISORY.md`, next to the
+report (never committed; `d` reads it); if the agent leaves it in the checkout
+instead, gsadv moves it next to the report. The fix prompt also
 includes the `antfind` directory so the agent can check other findings for
 duplicates and variants. When you later draft an advisory from the fix commit (`n`
 in the commits tab or `gsadv new <commit>`), gsadv takes the finding ID from the
@@ -72,9 +75,10 @@ its `REPORT.md` as evidence when there is no draft.
 `b`, or `gsadv similar <REPORT.md> [context]`, searches for similar bugs using the
 report as a template (the agent first confirms the report's bug pattern, since it
 may be a false positive) and saves the findings as `SIMILAR.md` next to the report;
-`s` reads it. The default Claude preset runs with
-`--permission-mode acceptEdits` for this; a custom `GSADV_AI` command uses its own
-permissions. The prompt is `src/prompts/fix.txt`.
+`s` reads it. The default Claude preset runs fixes with
+`--permission-mode acceptEdits`, and the `claude`, `codex` and `pmai` presets get
+`--add-dir <report directory>` so the agent can read it and write `ADVISORY.md`
+there; a custom `GSADV_AI` command uses its own permissions. The prompt is `src/prompts/fix.txt`.
 
 Press `,` to open the settings screen (`grep`, `label`, `antfind`, `attic`): move
 with `j`/`k` or the arrows, press Enter to change a value and `d` to reset it to the

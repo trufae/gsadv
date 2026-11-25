@@ -90,8 +90,13 @@ fn continue_edit(dir string, run_ai bool) ! {
 		if run_ai {
 			// WIP.txt next to the report shows every gsadv that a fix is running and
 			// keeps its log; it stays behind if the run fails or is interrupted.
-			wip := if session.kind == 'fix' { start_wip(session.id, dir) } else { '' }
-			ask_ai(dir, false, session.kind == 'fix', wip) or { return ai_error(dir, err.msg()) }
+			fix := session.kind == 'fix'
+			wip := if fix { start_wip(session.id, dir) } else { '' }
+			started := time.now().unix()
+			ask_ai(dir, false, fix, wip, if fix { os.dir(session.id) } else { '' }) or {
+				return ai_error(dir, err.msg())
+			}
+			if fix { recover_advisory(session.id, started) }
 		}
 		path := os.join_path(dir, 'reply.txt')
 		report := os.read_file(path)!
@@ -122,7 +127,7 @@ fn continue_edit(dir string, run_ai bool) ! {
 			os.write_file(proposed, orig)!
 		} else {
 			if run_ai {
-				ask_ai(dir, true, false, '') or { return ai_error(dir, err.msg()) }
+				ask_ai(dir, true, false, '', '') or { return ai_error(dir, err.msg()) }
 			}
 			notes, text := saved_ai_reply(dir) or {
 				return ai_error(dir, err.msg())
@@ -290,24 +295,37 @@ fn format_elapsed(seconds int) string {
 	return '${remaining_seconds}s'
 }
 
+// The preset command with extra access to add_dir ("\$3" in the shell script);
+// custom agent commands are used as given.
+fn agent_command(ai string, edits bool, add_dir string) string {
+	extra := if add_dir == '' { '' } else { ' --add-dir "\$3"' }
+	if ai == agents[0] {
+		permission := if edits { ' --permission-mode acceptEdits' } else { '' }
+		return '${ai}${permission}${extra} --output-format stream-json --verbose'
+	}
+	if ai == agents[1] { return 'codex exec${extra} -' }
+	if ai == agents[2] { return 'pmai${extra} --progress "\$(cat)"' }
+	return ai
+}
+
 // Keep stdout on disk from the start so interruption cannot discard pipe buffers.
 // stderr is inherited; Claude's structured stdout needs a separate progress reader.
 // edits lets the default Claude preset change files; custom GSADV_AI commands set their own permissions.
+// add_dir gives the claude, codex and pmai presets access to another directory.
 // tee, when set, receives a copy of the agent's progress and output as it streams.
-fn ask_ai(dir string, advisory bool, edits bool, tee string) ! {
+fn ask_ai(dir string, advisory bool, edits bool, tee string, add_dir string) ! {
 	pf := os.join_path(dir, 'prompt.txt')
 	of := os.join_path(dir, 'reply.txt')
 	ai := setting('AI') or { agents[0] }
 	claude := ai == agents[0]
-	permission := if edits { ' --permission-mode acceptEdits' } else { '' }
-	command := if claude { '${ai}${permission} --output-format stream-json --verbose' } else { ai }
+	command := agent_command(ai, edits, add_dir)
 	log := if claude { os.join_path(dir, 'claude.jsonl') } else { of }
 	os.write_file(of, '')!
 	if claude { os.write_file(log, '')! }
 	mut input := os.open(log)!
 	defer { input.close() }
 	mut process := os.new_process('sh')
-	process.set_args(['-c', '{ ${command}\n} < "\$1" > "\$2"', 'sh', pf, log])
+	process.set_args(['-c', '{ ${command}\n} < "\$1" > "\$2"', 'sh', pf, log, add_dir])
 	mut stream := ClaudeStream{advisory: advisory, tee: tee}
 	stream.say('running ${ai} ...')
 	mut stopwatch := time.new_stopwatch()
@@ -973,7 +991,7 @@ fn resume_comment(dir string, session EditSession, run_ai bool) ! {
 	path := os.join_path(dir, 'edit.md')
 	if !os.exists(path) {
 		if session.kind == 'source-review' && run_ai {
-			ask_ai(dir, false, false, '') or { return ai_error(dir, err.msg()) }
+			ask_ai(dir, false, false, '', '') or { return ai_error(dir, err.msg()) }
 		}
 		name := if session.kind == 'comment' { 'original.md' } else { 'reply.txt' }
 		os.write_file(path, os.read_file(os.join_path(dir, name))!)!
@@ -1038,6 +1056,8 @@ fn cmd_fix(api Repository, path string, ctx string) ! {
 	report := os.read_file(full)!
 	prompt := render(prompt_fix, {
 		'advisory': advisory_path(full)
+		'dir':      os.dir(full)
+		'files':    report_files(full)
 		'format':   format
 		'antfind':  reports_base()
 		'attic':    project_setting('attic')
