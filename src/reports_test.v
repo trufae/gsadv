@@ -106,6 +106,11 @@ fn test_report_wip_states() ! {
 	assert report_state(report) == 'working'
 	os.rm(wip)!
 	assert report_state(report) == 'confirmed'
+	os.write_file(advisory_path(report), 'summary: Null dereference\n')!
+	assert report_state(report) == 'advisory'
+	start_wip(report, '/tmp/recovery')
+	assert report_state(report) == 'working'
+	os.rm(wip)!
 	assert report_columns(120).contains('STATE') && !report_columns(120).contains('RESULT')
 }
 

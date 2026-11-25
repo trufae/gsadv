@@ -244,6 +244,8 @@ fn wip_alive(path string) bool {
 fn report_state(report string) string {
 	wip := wip_path(report)
 	if os.exists(wip) { return if wip_alive(wip) { 'working' } else { 'stopped' } }
+	// Only a confirmed fix writes ADVISORY.md, so it supersedes the verdict.
+	if os.exists(advisory_path(report)) { return 'advisory' }
 	return report_result(report)
 }
 
@@ -344,6 +346,7 @@ fn result_cell(result string) string {
 		'working' { term.green(cell) }
 		'stopped' { term.red(cell) }
 		'confirmed' { term.yellow(cell) }
+		'advisory' { term.magenta(cell) }
 		'false-pos', 'fixed-old' { term.dim(cell) }
 		'unclear' { term.cyan(cell) }
 		else { cell }

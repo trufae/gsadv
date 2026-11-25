@@ -58,7 +58,8 @@ fixing process; `w` reads it. The summary is then saved as `RESULT.md` (replacin
 an earlier one) and `WIP.txt` is removed; after a failed or interrupted run it stays
 for inspection. These files move to the attic with the finding. The STATE column,
 which every running gsadv refreshes each second, shows `working` during a run,
-`stopped` when its process is gone, and then the verdict: `confirmed` (review,
+`stopped` when its process is gone, `advisory` once `ADVISORY.md` exists next to
+the report (`d` reads it), and otherwise the verdict: `confirmed` (review,
 commit, push or move to the attic), `false-pos`, `fixed-old` (already fixed),
 `unclear` (inconclusive) or `done` (no verdict line). Press `o` to read `RESULT.md`.
 The fix prompt points the agent at the report's directory and lists its files, so it

@@ -1084,9 +1084,9 @@ fn tui(initial_api Repository, initial_label string) {
 		} else if status != '' {
 			status
 		} else if report.len >= 11 && (report[9] != '' || report[10] != '') {
-			'${report[3]}' + if report[9] in ['working', 'stopped'] { ' | fix ${report[9]} (w views WIP.txt)' } else if report[9] != '' { ' | state: ${report[9]} (o views RESULT.md)' } else { '' } +
+			'${report[3]}' + if report[9] in ['working', 'stopped'] { ' | fix ${report[9]} (w views WIP.txt)' } else if report[9] == 'advisory' { ' | advisory draft (d views ADVISORY.md)' } else if report[9] != '' { ' | state: ${report[9]} (o views RESULT.md)' } else { '' } +
 				if report[10] != '' { ' | similar bugs saved (s views SIMILAR.md)' } else { '' } +
-				if os.exists(advisory_path(report[0])) { ' | advisory draft (d views ADVISORY.md)' } else { '' } + ' | ${report[0]}'
+				if report[9] != 'advisory' && os.exists(advisory_path(report[0])) { ' | advisory draft (d views ADVISORY.md)' } else { '' } + ' | ${report[0]}'
 		} else if report.len > 0 {
 			'${report[3]} | ${report[1]} | ${report[6]} | ${report[5]} | ${report[0]}'
 		} else if id != '' {
@@ -1105,7 +1105,7 @@ fn tui(initial_api Repository, initial_label string) {
 		// Keep the active view visible when a short terminal only has one header.
 		if layout.head == 1 { headers[0] = headers[1] }
 		item_hints := if view == 4 {
-			['a actions', 'm mark', 'enter view', 'e edit', 'x AI fix', 'o result', 'b similar', 's similar.md', 't attic', 'g reload']
+			['a actions', 'm mark', 'enter view', 'e edit', 'x AI fix', 'o result', 'd advisory', 'b similar', 's similar.md', 't attic', 'g reload']
 		} else {
 			['a actions', 'm mark', 'enter view', 'e edit', 'r review', 'n new', 'N manual draft', 'g reload', 'A agent']
 		}
