@@ -30,6 +30,7 @@ const help = 'Usage: gsadv [-r namespace/repo|url] [--provider github|gitlab] [-
   credits <id>            manage credited people and roles in the TUI
   edit <id>               edit advisory in \$EDITOR
   review <id|commit|url> [context] review an advisory or source with AI, then edit
+  pr-review <PR URL|number> [context] draft a comment helping the contributor merge it
   comment <issue|PR URL> [text] edit a discussion comment, then confirm posting
   similar <id|commit|url> [context] find similar bugs using the selection as a template
   fix <REPORT.md> [context] ask the AI to fix the reported bug and commit it locally
@@ -115,7 +116,7 @@ fn main() {
 		tui(GitHub{}, issue_label(args))
 		return
 	}
-	input := if cmd in ['new', 'review', 'comment', 'similar', 'invalid', 'unmark'] { id } else { '' }
+	input := if cmd in ['new', 'review', 'pr-review', 'comment', 'similar', 'invalid', 'unmark'] { id } else { '' }
 	api := configured_repository(input) or {
 		eprintln('cannot select repository: ${err}')
 		exit(1)
@@ -208,6 +209,12 @@ fn main() {
 				cmd_review(api, id, ctx) or { eprintln('error: ${err}'); exit(1) }
 			} else {
 				cmd_source_review(api, id, ctx) or { eprintln('error: ${err}'); exit(1) }
+			}
+		}
+		'pr-review' {
+			cmd_pr_review(api, id, ctx) or {
+				eprintln('error: ${err}')
+				exit(1)
 			}
 		}
 		'comment' {

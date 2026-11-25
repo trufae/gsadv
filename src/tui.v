@@ -243,6 +243,7 @@ n: new advisory: a AI draft, m manual draft, i import the ADVISORY.md of the fin
    commits with one ready to import show 📝 ADVISORY.md until an advisory is linked
 N: write a draft manually from a template in \$EDITOR
 M: edit and post a discussion comment on the selected issue/PR/MR
+R: in PRs/MRs, AI review for the contributor (merge blockers, nearby bugs, follow-ups) drafted as a comment
 b: find similar bugs using the selected advisory or source as a template
 C: manage advisory credits (finder, reporter, fix developer and other roles)
 c: request CVE; d: accept/reopen as draft; p: publish; x: close
@@ -490,6 +491,11 @@ fn run(k string, api Repository, id string, input string) ! {
 			if input == '' { advisory_tui(api, id, k)!; return }
 			ctx := action_input('Review source with AI. Extra context (optional; Esc cancels): ') or { return }
 			tui_workflow(api, 'review', input, ctx)!
+			action_input('Press Enter to return (Ctrl+C/Esc also returns): ') or {}
+		}
+		'R' {
+			ctx := action_input('Review the PR/MR for its contributor with AI. Extra context (optional; Esc cancels): ') or { return }
+			tui_workflow(api, 'pr-review', input, ctx)!
 			action_input('Press Enter to return (Ctrl+C/Esc also returns): ') or {}
 		}
 		'M' {
@@ -1167,7 +1173,8 @@ fn tui(initial_api Repository, initial_label string) {
 				what := ['', 'commit', 'issue', if api.provider == 'gitlab' { 'MR' } else { 'PR' }][view]
 				source_menu := if input == '' { '' } else {
 					'Selected ${what}:\nr AI review\nn draft an advisory from it with AI\nb find similar bugs using it as a template\n' +
-						if view >= 2 { 'M post a discussion comment\n' } else { '' } + '\n'
+						if view >= 2 { 'M post a discussion comment\n' } else { '' } +
+						if view == 3 { 'R review it and draft a comment for the contributor\n' } else { '' } + '\n'
 				}
 				advisory_menu := if id == '' { '' } else {
 					'Advisory ${id}:\nv view\ne edit\ns status details\n' + if input == '' { 'r AI review\nb find similar bugs using it as a template\n' } else { '' } +
@@ -1178,7 +1185,7 @@ fn tui(initial_api Repository, initial_label string) {
 				if k == 'v' && id != '' {
 					k = '\n'
 					show_input = ''
-				} else if k !in ['s', 'e', 'r', 'b', 'C', 'M', 'N', 'n', 'm'] && !actions.any(it.starts_with(k + ' ')) {
+				} else if k !in ['s', 'e', 'r', 'b', 'C', 'M', 'R', 'N', 'n', 'm'] && !actions.any(it.starts_with(k + ' ')) {
 					continue
 				}
 			}
@@ -1221,7 +1228,7 @@ fn tui(initial_api Repository, initial_label string) {
 			changed = [true, true, true, true, true]
 			continue
 		}
-		if pending_action != '' && (fix_command != '' || k in ['q', '\x03', 'c', 'd', 'p', 'x', 't', 'e', 'r', 'n', 'N', 'C', 'M', 'b', '\n', '\r']) {
+		if pending_action != '' && (fix_command != '' || k in ['q', '\x03', 'c', 'd', 'p', 'x', 't', 'e', 'r', 'n', 'N', 'C', 'M', 'R', 'b', '\n', '\r']) {
 			continue
 		}
 		if view == 4 && (fix_command != '' || k in ['\n', '\r', 'e', 'o', 'w', 'd', 'b', 's', 't']) {
@@ -1423,12 +1430,13 @@ fn tui(initial_api Repository, initial_label string) {
 				marks_stamp = api.marks_stamp()
 				changed = [true, true, true, true, true]
 			}
-			'\n', '\r', 'e', 'r', 'b', 'n', 'N', 's', 'C', 'M', '?' {
+			'\n', '\r', 'e', 'r', 'b', 'n', 'N', 's', 'C', 'M', 'R', '?' {
 				if api.repo == '' && k != '?' && !(view == 1 && k in ['\n', '\r']) {
 					status = 'Repository unavailable; wait for loading or press g to retry'
 					continue
 				}
 				if k == 'M' && view < 2 { status = 'select an issue/PR/MR to comment'; continue }
+				if k == 'R' && (view != 3 || input == '') { status = 'select a PR/MR to review for its contributor'; continue }
 				if id == '' && (k in ['e', 's', 'C'] || (k in ['\n', '\r', 'b', 'r', 'M'] && input == '')) {
 					status = 'no advisory selected; press N for a manual draft or n for AI'
 					continue

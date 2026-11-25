@@ -296,12 +296,21 @@ fn test_render_prompts() {
 	assert render('a {{x}} {{y}} {{', {
 		'x': '{{y}}'
 	}) == 'a {{y}} {{y}} {{'
-	for template in [prompt_new, prompt_review, prompt_source_review, prompt_similar] {
+	for template in [prompt_new, prompt_review, prompt_source_review, prompt_similar, prompt_pr_review] {
 		assert template.contains('{{repo}}') && template.contains('{{ctx}}')
 	}
 	api := Repository(GitLab{provider: 'gitlab'})
 	reply := api.reply_instructions()
 	assert reply.contains('summary: <one line title') && !reply.contains('{{') && reply.ends_with(prompt_gitlab)
+}
+
+fn test_pr_review_commands() {
+	gh := Repository(GitHub{repo: 'o/r'})
+	assert gh.pr_commands('12') == 'gh pr view 12 -R o/r --comments\ngh pr diff 12 -R o/r'
+	ghe := Repository(GitHub{repo: 'o/r', host: 'git.example.com'})
+	assert ghe.pr_commands('12').starts_with('gh pr view 12 -R git.example.com/o/r ')
+	gl := Repository(GitLab{repo: 'g/sub/p', provider: 'gitlab'})
+	assert gl.pr_commands('3') == 'glab mr view 3 -R g/sub/p --comments\nglab mr diff 3 -R g/sub/p'
 }
 
 fn verdict_of(reply string) []string {

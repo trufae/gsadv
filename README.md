@@ -20,6 +20,10 @@ and `i` imports an `ADVISORY.md` when one is available (see the Reports tab belo
 Press `a` for the actions that apply to the selected item in the current tab
 (similar bugs, credits, CVE and state changes, comments, ...); each still has its
 direct key, listed in `?` help.
+In the PRs/MRs tab, `R` asks the AI to review the selected pull/merge request for its
+contributor: merge blockers, logic bugs and similar bugs nearby, questions about the
+approach and follow-ups, written as a short comment. You edit it in `$EDITOR` and
+confirm before gsadv posts it (`gsadv pr-review <PR URL|number> [context]`).
 Use `J`/`K` or AvPág/RePág (Page Down/Page Up) to move down/up ten rows.
 Switch to the next/previous tab with Tab/Shift-Tab, `l`/`h` or the right/left arrows.
 `H`/`L` jump to the first/last tab.

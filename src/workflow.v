@@ -15,6 +15,7 @@ const prompt_review = $embed_file('prompts/review.txt').to_string().trim_right('
 const prompt_source_review = $embed_file('prompts/source_review.txt').to_string().trim_right('\n')
 const prompt_similar = $embed_file('prompts/similar.txt').to_string().trim_right('\n')
 const prompt_fix = $embed_file('prompts/fix.txt').to_string().trim_right('\n')
+const prompt_pr_review = $embed_file('prompts/pr_review.txt').to_string().trim_right('\n')
 const prompt_quickfix = $embed_file('prompts/quickfix.txt').to_string().trim_right('\n')
 
 // Fill {{name}} placeholders in one pass, so inserted evidence is never expanded.
@@ -73,7 +74,7 @@ fn resume_edit(dir string, run_ai bool) ! {
 
 fn continue_edit(dir string, run_ai bool) ! {
 	session := json2.decode[EditSession](os.read_file(os.join_path(dir, 'session.json'))!)!
-	if session.kind !in ['new', 'review', 'edit', 'similar', 'source-review', 'comment', 'fix', 'quickfix'] || session.repo == ''
+	if session.kind !in ['new', 'review', 'edit', 'similar', 'source-review', 'pr-review', 'comment', 'fix', 'quickfix'] || session.repo == ''
 		|| (session.kind != 'new' && session.id == '') {
 		return error('invalid recovery session: ${dir}')
 	}
@@ -83,7 +84,7 @@ fn continue_edit(dir string, run_ai bool) ! {
 	defer {
 		os.signal_opt(.int, previous) or {}
 	}
-	if session.kind in ['source-review', 'comment'] {
+	if session.kind in ['source-review', 'pr-review', 'comment'] {
 		resume_comment(dir, session, run_ai)!
 		return
 	}
@@ -1005,6 +1006,28 @@ fn cmd_source_review(api Repository, input string, ctx string) ! {
 	resume_edit(start_edit(api, input, 'source-review', evidence, prompt)!, true)!
 }
 
+// Draft a comment that helps the contributor of a pull/merge request get it merged.
+fn cmd_pr_review(api Repository, input string, ctx string) ! {
+	number := input != '' && input.bytes().all(it.is_digit())
+	s := api.source(if number {
+		api.url() + if api.provider == 'gitlab' { '/-/merge_requests/' } else { '/pull/' } + input
+	} else {
+		input
+	})!
+	if s.kind !in ['pull', 'merge_requests'] { return error('pr-review requires a PR/MR URL or number') }
+	evidence := api.source_text(s, true)!
+	prompt := render(prompt_pr_review, {
+		'what':     if api.provider == 'gitlab' { 'merge request' } else { 'pull request' }
+		'repo':     api.repo
+		'cli':      api.cli()
+		'url':      s.url
+		'commands': api.pr_commands(s.ref)
+		'ctx':      ctx
+		'evidence': evidence
+	})
+	resume_edit(start_edit(api, s.url, 'pr-review', evidence, prompt)!, true)!
+}
+
 fn cmd_comment(api Repository, input string, text string) ! {
 	s := api.source(input)!
 	if s.kind == 'commit' { return error('comments require an issue or PR/MR URL') }
@@ -1016,7 +1039,7 @@ fn resume_comment(dir string, session EditSession, run_ai bool) ! {
 	if os.exists(receipt) { println('Comment already posted: ${os.read_file(receipt)!}'); return }
 	path := os.join_path(dir, 'edit.md')
 	if !os.exists(path) {
-		if session.kind == 'source-review' && run_ai {
+		if session.kind in ['source-review', 'pr-review'] && run_ai {
 			ask_ai(dir, false, false, '', '') or { return ai_error(dir, err.msg()) }
 		}
 		name := if session.kind == 'comment' { 'original.md' } else { 'reply.txt' }

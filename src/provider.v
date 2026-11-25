@@ -8,6 +8,13 @@ fn (api Repository) cli() string {
 	return if api.provider == 'gitlab' { 'glab' } else { 'gh' }
 }
 
+// Commands an agent can run to read pull/merge request n; -R pins them to this repository.
+fn (api Repository) pr_commands(n string) string {
+	repo := if api.host in ['github.com', 'gitlab.com'] { api.repo } else { '${api.host}/${api.repo}' }
+	cmd := if api.provider == 'gitlab' { 'glab mr' } else { 'gh pr' }
+	return '${cmd} view ${n} -R ${repo} --comments\n${cmd} diff ${n} -R ${repo}'
+}
+
 fn (api Repository) is_advisory(input string) bool {
 	return if api.provider == 'gitlab' { input.starts_with('GL-') } else { input.starts_with('GHSA-') }
 }
