@@ -15,7 +15,7 @@ explain the other verified fixes and scope boundaries in the advisory descriptio
 do not combine their impacts, affected versions or severity with the selected vulnerability.
 Check for duplicates of the existing advisories listed below and cite relevant related advisories.
 Include {{url}} and any verified fix commits in the references.
-
+{{finding}}
 {{reply}}
 
 Source: {{url}}

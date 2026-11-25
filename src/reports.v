@@ -1,9 +1,12 @@
 module main
 
 import os
+import term
 import time
 
-// Rows are [path, severity, type, id, title, location, cwe, group, date].
+// Rows are [path, severity, type, id, title, location, cwe, group, date, state, similar].
+// state is working or stopped while a fix run's WIP.txt exists, then the verdict in its RESULT.md;
+// similar is set when a similar-bugs search saved SIMILAR.md there.
 // Findings start with a fenced header:
 //   ANT-2026-XXXXXXXX  [high]  CWE-416  memory-safety
 //   Title
@@ -185,7 +188,8 @@ fn find_reports(base string, attic string) [][]string {
 		group := if rel.contains('/') { os.dir(rel) } else { '.' }
 		id := if r[2] != '' { r[2] } else { os.file_name(os.dir(path)) }
 		rows << [path, r[0], r[1], id, r[3], r[4], r[5], group,
-			time.unix(os.file_last_mod_unix(path)).local().ymmdd()]
+			time.unix(os.file_last_mod_unix(path)).local().ymmdd(), report_state(path),
+			if os.exists(similar_path(path)) { 'similar' } else { '' }]
 	}
 	rows.sort_with_compare(fn (a &[]string, b &[]string) int {
 		ra, rb := report_rank((*a)[1]), report_rank((*b)[1])
@@ -195,6 +199,131 @@ fn find_reports(base string, attic string) [][]string {
 	return rows
 }
 
+fn is_report(path string) bool {
+	return os.file_name(path) == 'REPORT.md' && os.is_file(path)
+}
+
+fn similar_path(report string) string {
+	return os.join_path(os.dir(report), 'SIMILAR.md')
+}
+
+fn C.kill(pid int, sig int) int
+
+fn wip_path(report string) string {
+	return os.join_path(os.dir(report), 'WIP.txt')
+}
+
+// The first line identifies the fixing process; the agent's output follows.
+fn start_wip(report string, recovery string) string {
+	path := wip_path(report)
+	host := os.hostname() or { '' }
+	header := 'gsadv fix pid=${os.getpid()} host=${host} started=${time.now().format_ss()}\nRecovery files: ${recovery}\n\n'
+	os.write_file(path, header) or {
+		eprintln('Could not create ${path}: ${err}')
+		return ''
+	}
+	return path
+}
+
+// A WIP.txt whose process is gone on this host belongs to a failed or interrupted run.
+fn wip_alive(path string) bool {
+	mut file := os.open(path) or { return false }
+	defer { file.close() }
+	mut buf := []u8{len: 256}
+	n := file.read(mut buf) or { return false }
+	mut fields := map[string]string{}
+	for field in buf[..n].bytestr().all_before('\n').fields() {
+		if field.contains('=') { fields[field.all_before('=')] = field.all_after_first('=') }
+	}
+	host := fields['host'] or { '' }
+	if host != '' && host != (os.hostname() or { '' }) { return true }
+	pid := (fields['pid'] or { '0' }).int()
+	return pid > 0 && C.kill(pid, 0) == 0
+}
+
+fn report_state(report string) string {
+	wip := wip_path(report)
+	if os.exists(wip) { return if wip_alive(wip) { 'working' } else { 'stopped' } }
+	return report_result(report)
+}
+
+fn advisory_path(report string) string {
+	return os.join_path(os.dir(report), 'ADVISORY.md')
+}
+
+// The first finding ID in text, e.g. from "* OSS-SCAN - ANT-2026-6PEMX3GV" in a fix commit.
+fn ant_id(text string) string {
+	mut i := 0
+	for {
+		i = text.index_after('ANT-', i) or { return '' }
+		id := text#[i..i + 17]
+		if id.len == 17 && id[4..8].bytes().all(it.is_digit()) && id[8] == `-`
+			&& id[9..].bytes().all(it.is_digit() || (it >= `A` && it <= `Z`))
+			&& (i + 17 == text.len || !text[i + 17].is_alnum()) {
+			return id
+		}
+		i += 4
+	}
+	return ''
+}
+
+// The directory of finding id below base, including the attic where fixed findings go.
+fn find_finding(base string, id string) string {
+	for name in os.ls(base) or { return '' } {
+		path := os.join_path(base, name)
+		if !os.is_dir(path) || os.is_link(path) { continue }
+		if name == id && os.is_file(os.join_path(path, 'REPORT.md')) { return path }
+		found := find_finding(path, id)
+		if found != '' { return found }
+	}
+	return ''
+}
+
+// Prompt text for a source that references a finding: its ADVISORY.md is trusted.
+fn finding_context(evidence string) string {
+	id := ant_id(evidence)
+	if id == '' { return '' }
+	dir := find_finding(reports_base(), id)
+	if dir == '' { return '' }
+	report := os.join_path(dir, 'REPORT.md')
+	advisory := os.read_file(os.join_path(dir, 'ADVISORY.md')) or {
+		return '\nThe source references finding ${id}; its report is ${report}. Read it as evidence;\nfindings come from automated analysis and may be false positives.\n'
+	}
+	return '\nThe source references finding ${id} (${report}). The agent that confirmed and fixed it wrote\n' +
+		'the advisory draft below. Trust it as the starting point: keep its verified analysis, correct only\n' +
+		'what the source shows to be wrong or incomplete, and fill in fields it left empty.\n\n' +
+		'Finding advisory draft (ADVISORY.md):\n${advisory.trim_space()}\n'
+}
+
+fn result_path(report string) string {
+	return os.join_path(os.dir(report), 'RESULT.md')
+}
+
+// Short label for the verdict in RESULT.md; empty when no fix has run.
+fn report_result(report string) string {
+	text := os.read_file(result_path(report)) or { return '' }
+	verdict, _ := fix_verdict(text)
+	return match verdict {
+		'confirmed' { 'confirmed' }
+		'false positive' { 'false-pos' }
+		'already fixed' { 'fixed-old' }
+		'inconclusive' { 'unclear' }
+		else { 'done' }
+	}
+}
+
+fn result_cell(result string) string {
+	cell := '${result:-9}'
+	return match result {
+		'working' { term.green(cell) }
+		'stopped' { term.red(cell) }
+		'confirmed' { term.yellow(cell) }
+		'false-pos', 'fixed-old' { term.dim(cell) }
+		'unclear' { term.cyan(cell) }
+		else { cell }
+	}
+}
+
 fn reports_base() string {
 	dir := project_setting('antfind')
 	return if os.is_abs_path(dir) { dir } else { os.join_path(project_root(), dir) }
@@ -202,23 +331,24 @@ fn reports_base() string {
 
 fn report_columns(w int) string {
 	return if w < 60 { 'TITLE' } else if w < 90 {
-		'   ${'TYPE':-14} TITLE'
+		'   ${'TYPE':-14} ${'STATE':-9} TITLE'
 	} else if w < 130 {
-		'   ${'ID':-18} ${'TYPE':-14} TITLE'
+		'   ${'ID':-18} ${'TYPE':-14} ${'STATE':-9} TITLE'
 	} else {
-		'   ${'ID':-18} ${'TYPE':-14} ${'CWE':-9} ${'GROUP':-24} TITLE'
+		'   ${'ID':-18} ${'TYPE':-14} ${'STATE':-9} ${'CWE':-9} ${'GROUP':-24} TITLE'
 	}
 }
 
 fn report_row(r []string, w int) string {
-	if r.len < 9 { return clip_line(r.join(' '), line_width(w)) }
+	if r.len < 10 { return clip_line(r.join(' '), line_width(w)) }
+	result := result_cell(r[9])
 	icon := if r[1] == 'bug' { '⚫' } else { severity_icon(r[1]) }
 	line := if w < 60 { r[4] } else if w < 90 {
-		'${icon} ${r[2]:-14} ${r[4]}'
+		'${icon} ${r[2]:-14} ${result} ${r[4]}'
 	} else if w < 130 {
-		'${icon} ${r[3]:-18} ${r[2]:-14} ${r[4]}'
+		'${icon} ${r[3]:-18} ${r[2]:-14} ${result} ${r[4]}'
 	} else {
-		'${icon} ${r[3]:-18} ${r[2]:-14} ${r[6]:-9} ${table_cell(r[7], 24)} ${r[4]}'
+		'${icon} ${r[3]:-18} ${r[2]:-14} ${result} ${r[6]:-9} ${table_cell(r[7], 24)} ${r[4]}'
 	}
 	return clip_line(line, line_width(w))
 }

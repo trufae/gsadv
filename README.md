@@ -44,11 +44,35 @@ keywords in the title or body when the CWE is missing or unknown. Press `f`/`F`
 to filter by severity, Enter to read a report and `e` to edit it. `t` moves the
 finding's directory into the attic next to it (`wave1/X` becomes `wave1/Attic/X`;
 an `attic` value containing `/` is a path below `antfind`). `x`, or
-`gsadv fix <REPORT.md> [context]`, asks the AI agent to reproduce the bug, fix the
-root cause and add a regression test in the checkout, then commit it locally (never
-push) with a subject tagged `##crash`, `##sandbox`, `##security` or `##vuln` and the
-report referenced on the third line as `* OSS-SCAN - <report id>`. Unverified fixes
-stay uncommitted. The agent's summary is shown when it finishes. The default Claude preset runs with
+`gsadv fix <REPORT.md> [context]`, asks the AI agent to confirm the bug first:
+reports may be false positives, so it must reproduce the crash or bug with a real
+reproducer against code built from the checkout before changing anything. Only a
+confirmed bug is fixed, with a regression test, and committed locally (never
+pushed) with a subject tagged `##crash`, `##sandbox`, `##security` or `##vuln` and
+the report referenced on the third line as `* OSS-SCAN - <report id>`. The reply
+starts with a verdict (confirmed, false positive, already fixed or inconclusive)
+and its reason, which gsadv prints after the summary; a false positive is marked
+invalid with that reason, so every running gsadv shows it. While the agent runs,
+its output is copied to `WIP.txt` next to `REPORT.md`, whose first line names the
+fixing process; `w` reads it. The summary is then saved as `RESULT.md` (replacing
+an earlier one) and `WIP.txt` is removed; after a failed or interrupted run it stays
+for inspection. These files move to the attic with the finding. The STATE column,
+which every running gsadv refreshes each second, shows `working` during a run,
+`stopped` when its process is gone, and then the verdict: `confirmed` (review,
+commit, push or move to the attic), `false-pos`, `fixed-old` (already fixed),
+`unclear` (inconclusive) or `done` (no verdict line). Press `o` to read `RESULT.md`.
+After committing a confirmed fix, the agent also writes an advisory draft,
+`ADVISORY.md`, next to the report (never committed; `d` reads it). The fix prompt
+includes the `antfind` directory so the agent can check other findings for
+duplicates and variants. When you later draft an advisory from the fix commit (`n`
+in the commits tab or `gsadv new <commit>`), gsadv takes the finding ID from the
+commit message (`* OSS-SCAN - ANT-...`), finds the finding under `antfind`, attic
+included, and gives the agent its `ADVISORY.md` to trust as the starting point, or
+its `REPORT.md` as evidence when there is no draft.
+`b`, or `gsadv similar <REPORT.md> [context]`, searches for similar bugs using the
+report as a template (the agent first confirms the report's bug pattern, since it
+may be a false positive) and saves the findings as `SIMILAR.md` next to the report;
+`s` reads it. The default Claude preset runs with
 `--permission-mode acceptEdits` for this; a custom `GSADV_AI` command uses its own
 permissions. The prompt is `src/prompts/fix.txt`.
 

@@ -88,7 +88,10 @@ fn continue_edit(dir string, run_ai bool) ! {
 	}
 	if session.kind in ['similar', 'fix'] {
 		if run_ai {
-			ask_ai(dir, false, session.kind == 'fix') or { return ai_error(dir, err.msg()) }
+			// WIP.txt next to the report shows every gsadv that a fix is running and
+			// keeps its log; it stays behind if the run fails or is interrupted.
+			wip := if session.kind == 'fix' { start_wip(session.id, dir) } else { '' }
+			ask_ai(dir, false, session.kind == 'fix', wip) or { return ai_error(dir, err.msg()) }
 		}
 		path := os.join_path(dir, 'reply.txt')
 		report := os.read_file(path)!
@@ -96,7 +99,20 @@ fn continue_edit(dir string, run_ai bool) ! {
 			return ai_error(dir, 'empty ${if session.kind == 'fix' { 'fix summary' } else { 'findings report' }}')
 		}
 		println('${if session.kind == 'fix' { 'Fix summary' } else { 'Findings report' }} saved in ${path}')
+		mut outcome := ''
+		if session.kind == 'fix' {
+			// Keep the agent's summary with the finding; it moves to the attic with it.
+			saved := result_path(session.id)
+			os.write_file(saved, report) or { eprintln('Could not save ${saved}: ${err}') }
+			os.rm(wip_path(session.id)) or {}
+			outcome = 'Saved the summary as ${saved}\n' + fix_outcome(session, report)
+		} else if is_report(session.id) {
+			saved := similar_path(session.id)
+			os.write_file(saved, report) or { eprintln('Could not save ${saved}: ${err}') }
+			outcome = 'Saved the findings as ${saved}'
+		}
 		view_text(report)!
+		if outcome != '' { println(outcome) }
 		return
 	}
 	orig := os.read_file(os.join_path(dir, 'original.md'))!
@@ -106,7 +122,7 @@ fn continue_edit(dir string, run_ai bool) ! {
 			os.write_file(proposed, orig)!
 		} else {
 			if run_ai {
-				ask_ai(dir, true, false) or { return ai_error(dir, err.msg()) }
+				ask_ai(dir, true, false, '') or { return ai_error(dir, err.msg()) }
 			}
 			notes, text := saved_ai_reply(dir) or {
 				return ai_error(dir, err.msg())
@@ -277,7 +293,8 @@ fn format_elapsed(seconds int) string {
 // Keep stdout on disk from the start so interruption cannot discard pipe buffers.
 // stderr is inherited; Claude's structured stdout needs a separate progress reader.
 // edits lets the default Claude preset change files; custom GSADV_AI commands set their own permissions.
-fn ask_ai(dir string, advisory bool, edits bool) ! {
+// tee, when set, receives a copy of the agent's progress and output as it streams.
+fn ask_ai(dir string, advisory bool, edits bool, tee string) ! {
 	pf := os.join_path(dir, 'prompt.txt')
 	of := os.join_path(dir, 'reply.txt')
 	ai := setting('AI') or { agents[0] }
@@ -291,11 +308,11 @@ fn ask_ai(dir string, advisory bool, edits bool) ! {
 	defer { input.close() }
 	mut process := os.new_process('sh')
 	process.set_args(['-c', '{ ${command}\n} < "\$1" > "\$2"', 'sh', pf, log])
-	eprintln('running ${ai} ...')
+	mut stream := ClaudeStream{advisory: advisory, tee: tee}
+	stream.say('running ${ai} ...')
 	mut stopwatch := time.new_stopwatch()
 	process.run()
 	defer { process.close() }
-	mut stream := ClaudeStream{advisory: advisory}
 	mut offset := u64(0)
 	mut next_update := 10
 	for {
@@ -307,11 +324,19 @@ fn ask_ai(dir string, advisory bool, edits bool) ! {
 				offset += u64(data.len)
 				stream.feed(data.bytestr(), of, false)
 			}
+		} else if tee != '' {
+			// Other agents write their reply straight to reply.txt; mirror it.
+			for {
+				data := input.read_bytes_at(8192, offset)
+				if data.len == 0 { break }
+				offset += u64(data.len)
+				append_text(tee, data.bytestr())
+			}
 		}
 		if !alive { break }
 		seconds := int(stopwatch.elapsed().seconds())
 		if seconds >= next_update {
-			eprintln('[gsadv] agent still running (${format_elapsed(seconds)} elapsed)')
+			stream.say('[gsadv] agent still running (${format_elapsed(seconds)} elapsed)')
 			next_update = seconds + 10
 		}
 		time.sleep(100 * time.millisecond)
@@ -329,7 +354,7 @@ fn ask_ai(dir string, advisory bool, edits bool) ! {
 		return error('${reason}; event log saved in ${log}')
 	}
 	seconds := int(stopwatch.elapsed().seconds())
-	eprintln('[gsadv] agent finished (${format_elapsed(seconds)} elapsed)')
+	stream.say('[gsadv] agent finished (${format_elapsed(seconds)} elapsed)')
 }
 
 struct ClaudeContent {
@@ -373,6 +398,7 @@ struct ClaudeEvent {
 
 struct ClaudeStream {
 	advisory bool
+	tee      string // also append progress and replies here, e.g. a report's WIP.txt
 mut:
 	pending string
 	finished bool
@@ -410,12 +436,24 @@ fn (mut stream ClaudeStream) feed(chunk string, output string, eof bool) {
 	}
 }
 
+fn append_text(path string, text string) {
+	if path == '' { return }
+	mut file := os.open_append(path) or { return }
+	file.write_string(text) or {}
+	file.close()
+}
+
+fn (stream ClaudeStream) say(text string) {
+	eprintln(text)
+	append_text(stream.tee, text + '\n')
+}
+
 fn (mut stream ClaudeStream) event(line string, output string) ! {
 	if line.trim_space() == '' { return }
 	event := json2.decode[ClaudeEvent](line) or { return error('invalid Claude event: ${err}') }
 	match event.type {
 		'system' {
-			if event.subtype == 'init' { eprintln('[claude] session started') }
+			if event.subtype == 'init' { stream.say('[claude] session started') }
 		}
 		'assistant' {
 			for block in event.message.content {
@@ -425,9 +463,9 @@ fn (mut stream ClaudeStream) event(line string, output string) ! {
 						file.write_string(block.text + '\n') or { file.close(); return err }
 						file.close()
 					}
-					eprintln(block.text)
+					stream.say(block.text)
 				} else if block.type == 'tool_use' {
-					eprintln(claude_tool_progress(block))
+					stream.say(claude_tool_progress(block))
 				}
 			}
 		}
@@ -881,6 +919,8 @@ fn cmd_new(api Repository, input string, ctx string) ! {
 	s := api.source(input)!
 	evidence := api.source_text(s, true)!
 	existing := api.advisories('')!.map(it.join(' ')).join('\n')
+	finding := finding_context(evidence)
+	if finding != '' { eprintln('Using finding ${ant_id(evidence)} from ${reports_base()}') }
 	prompt := render(prompt_new, {
 		'provider': api.provider
 		'repo':     api.repo
@@ -890,6 +930,7 @@ fn cmd_new(api Repository, input string, ctx string) ! {
 		'ctx':      ctx
 		'existing': existing
 		'evidence': evidence
+		'finding':  finding
 	})
 	resume_edit(start_edit(api, '', 'new', '', prompt)!, true)!
 }
@@ -932,7 +973,7 @@ fn resume_comment(dir string, session EditSession, run_ai bool) ! {
 	path := os.join_path(dir, 'edit.md')
 	if !os.exists(path) {
 		if session.kind == 'source-review' && run_ai {
-			ask_ai(dir, false, false) or { return ai_error(dir, err.msg()) }
+			ask_ai(dir, false, false, '') or { return ai_error(dir, err.msg()) }
 		}
 		name := if session.kind == 'comment' { 'original.md' } else { 'reply.txt' }
 		os.write_file(path, os.read_file(os.join_path(dir, name))!)!
@@ -966,7 +1007,10 @@ fn cmd_similar(api Repository, input string, ctx string) ! {
 	advs := api.advisories('')!
 	mut origin := input
 	mut evidence := ''
-	if api.is_advisory(input) {
+	if is_report(input) {
+		origin = os.real_path(input)
+		evidence = os.read_file(origin)!
+	} else if api.is_advisory(input) {
 		evidence = api.advisory(input)!
 	} else {
 		s := api.source(input)!
@@ -985,16 +1029,19 @@ fn cmd_similar(api Repository, input string, ctx string) ! {
 		'existing': advs.map(it.join(' ')).join('\n')
 		'evidence': evidence
 	})
-	resume_edit(start_edit(api, input, 'similar', evidence, prompt)!, true)!
+	resume_edit(start_edit(api, if is_report(input) { origin } else { input }, 'similar', evidence, prompt)!, true)!
 }
 
 // Ask the agent to fix the vulnerability in a REPORT.md and commit it locally, citing the report ID.
 fn cmd_fix(api Repository, path string, ctx string) ! {
 	full := os.real_path(path)
 	report := os.read_file(full)!
-	header := parse_report(report)[2]
 	prompt := render(prompt_fix, {
-		'id':     if header != '' { header } else { os.file_name(os.dir(full)) }
+		'advisory': advisory_path(full)
+		'format':   format
+		'antfind':  reports_base()
+		'attic':    project_setting('attic')
+		'id':     report_id(full)
 		'repo':   api.repo
 		'cli':    api.cli()
 		'path':   full
@@ -1002,6 +1049,48 @@ fn cmd_fix(api Repository, path string, ctx string) ! {
 		'report': report
 	})
 	resume_edit(start_edit(api, full, 'fix', report, prompt)!, true)!
+}
+
+fn report_id(path string) string {
+	header := parse_report(os.read_file(path) or { '' })[2]
+	return if header != '' { header } else { os.file_name(os.dir(path)) }
+}
+
+// The fix prompt asks for leading Verdict: and Reason: lines; tolerate Markdown around them.
+fn fix_verdict(reply string) (string, string) {
+	mut verdict, mut reason := '', ''
+	for line in reply.split_into_lines() {
+		t := line.trim_space().trim('*_`#> ')
+		field := t.all_before(':').trim('*_` ').to_lower()
+		value := t.all_after_first(':').trim('*_` ')
+		if verdict == '' && field == 'verdict' {
+			v := value.to_lower().replace('-', ' ')
+			verdict = ['confirmed', 'false positive', 'already fixed', 'inconclusive'].filter(v.starts_with(it))[0] or { '' }
+		} else if reason == '' && field == 'reason' {
+			reason = value
+		}
+		if verdict != '' && reason != '' { break }
+	}
+	return verdict, reason
+}
+
+// Report the verdict; a false positive marks the report invalid for every gsadv process.
+fn fix_outcome(session EditSession, reply string) string {
+	verdict, reason := fix_verdict(reply)
+	id := report_id(session.id)
+	detail := if reason == '' { '' } else { ': ${reason}' }
+	if verdict == '' {
+		return 'The reply has no Verdict line; read the summary and press m on ${id} to mark it.'
+	}
+	if verdict != 'false positive' { return 'Verdict for ${id}: ${verdict}${detail}' }
+	note := 'false positive' + if reason == '' { ' (see the fix summary)' } else { ': ${reason}' }
+	api := repository_location(session.repo, session.provider, session.host) or {
+		return 'Verdict for ${id}: false positive${detail}\nCould not mark it invalid: ${err}'
+	}
+	api.mark_invalid('report:' + id, note) or {
+		return 'Verdict for ${id}: false positive${detail}\nCould not mark it invalid: ${err}'
+	}
+	return 'Verdict for ${id}: false positive${detail}\nMarked ${id} invalid; no code was changed.'
 }
 
 fn cmd_edit(api Repository, id string) ! {

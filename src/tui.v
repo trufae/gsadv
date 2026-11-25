@@ -251,7 +251,12 @@ g: reload; A: cycle AI agent
 ,: project settings saved in .gsadv.ini: issues/PRs/MRs label (empty shows all labels),
    commits git log -E --grep regex (empty shows all), Reports antfind and attic directories
 Reports: REPORT.md files under antfind, skipping attic; enter views, e edits, f/F severity,
-   x asks the AI to fix the bug and commit it locally (OSS-SCAN - <id>), t moves the report to the attic
+   x asks the AI to confirm the bug with a reproducer, then fix and commit it locally (OSS-SCAN - <id>);
+   a false positive is marked invalid. While it runs, the agent output is copied to WIP.txt next to
+   the report (w views it) and STATE shows working, or stopped if the run died. The agent summary
+   is then saved as RESULT.md (o views it) and STATE shows its verdict. A confirmed fix also writes
+   an advisory draft, ADVISORY.md (d views it); n on the fix commit drafts the advisory from it. b searches for similar bugs using the report
+   as a template and saves them as SIMILAR.md (s views it). t moves the report to the attic
 ?: this help; q or Ctrl+C: quit
 
 Severity: 🔴 critical, 🟠 high, 🟡 medium, 🟢 low, ⚪ unknown.
@@ -859,6 +864,7 @@ fn tui(initial_api Repository, initial_label string) {
 	mut marks := map[string]Mark{}
 	mut marks_stamp := ''
 	mut marks_checked := time.now()
+	mut states_checked := time.now()
 	if api.repo != '' {
 		marks = api.marks() or { status = 'local marks: ${err}'; map[string]Mark{} }
 		marks_stamp = api.marks_stamp()
@@ -973,6 +979,19 @@ fn tui(initial_api Repository, initial_label string) {
 				changed = [true, true, true, true, true]
 			}
 		}
+		// Fix runs, here or in other terminals, change a report's state.
+		if view == 4 && time.since(states_checked) >= time.second {
+			states_checked = time.now()
+			for mut r in reports {
+				if r.len >= 10 {
+					state := report_state(r[0])
+					if state != r[9] {
+						r[9] = state
+						changed[4] = true
+					}
+				}
+			}
+		}
 		filters := api.tui_states(view)
 		w, h := terminal_size()
 		width := line_width(w)
@@ -1064,6 +1083,10 @@ fn tui(initial_api Repository, initial_label string) {
 			'Updating ${pending_action}... You can keep browsing; other changes and quitting wait for completion.'
 		} else if status != '' {
 			status
+		} else if report.len >= 11 && (report[9] != '' || report[10] != '') {
+			'${report[3]}' + if report[9] in ['working', 'stopped'] { ' | fix ${report[9]} (w views WIP.txt)' } else if report[9] != '' { ' | state: ${report[9]} (o views RESULT.md)' } else { '' } +
+				if report[10] != '' { ' | similar bugs saved (s views SIMILAR.md)' } else { '' } +
+				if os.exists(advisory_path(report[0])) { ' | advisory draft (d views ADVISORY.md)' } else { '' } + ' | ${report[0]}'
 		} else if report.len > 0 {
 			'${report[3]} | ${report[1]} | ${report[6]} | ${report[5]} | ${report[0]}'
 		} else if id != '' {
@@ -1082,7 +1105,7 @@ fn tui(initial_api Repository, initial_label string) {
 		// Keep the active view visible when a short terminal only has one header.
 		if layout.head == 1 { headers[0] = headers[1] }
 		item_hints := if view == 4 {
-			['a actions', 'm mark', 'enter view', 'e edit', 'x AI fix', 't attic', 'g reload', 'A agent']
+			['a actions', 'm mark', 'enter view', 'e edit', 'x AI fix', 'o result', 'b similar', 's similar.md', 't attic', 'g reload']
 		} else {
 			['a actions', 'm mark', 'enter view', 'e edit', 'r review', 'n new', 'N manual draft', 'g reload', 'A agent']
 		}
@@ -1107,9 +1130,14 @@ fn tui(initial_api Repository, initial_label string) {
 					continue
 				}
 				k = tui_dialog('Actions for ${report[3]}\n${hint}' + if mark_note == '' { '' } else { '\n${mark_note}' } +
-					'\n\nv view REPORT.md\ne edit REPORT.md in \$EDITOR\nx fix the bug with AI and commit it locally (never pushed)\n' +
+					'\n\nv view REPORT.md\ne edit REPORT.md in \$EDITOR\nx confirm with a reproducer, then fix and commit locally with AI (false positives are marked invalid)\n' +
+					if os.exists(wip_path(report[0])) { 'w view WIP.txt (fix ${report[9]})\n' } else { '' } +
+					if os.exists(result_path(report[0])) { 'o view RESULT.md\n' } else { '' } +
+					if os.exists(advisory_path(report[0])) { 'd view ADVISORY.md (advisory draft from the fix)\n' } else { '' } +
+					'b find similar bugs using it as a template (saved as SIMILAR.md)\n' +
+					if report.len >= 11 && report[10] != '' { 's view SIMILAR.md\n' } else { '' } +
 					't move to the attic (${project_setting('attic')})\nm mark (important, wip, pin, ignore, invalid)\n\nChoose a key; Enter/Esc cancels.')
-				if k == 'v' { k = '\n' } else if k !in ['e', 'x', 't', 'm'] { continue }
+				if k == 'v' { k = '\n' } else if k !in ['e', 'x', 'o', 'w', 'd', 'b', 's', 't', 'm'] { continue }
 			} else {
 				if target == '' {
 					status = 'no item selected'
@@ -1175,7 +1203,7 @@ fn tui(initial_api Repository, initial_label string) {
 		if pending_action != '' && k in ['q', '\x03', 'c', 'd', 'p', 'x', 't', 'e', 'r', 'n', 'N', 'C', 'M', 'b', '\n', '\r'] {
 			continue
 		}
-		if view == 4 && k in ['\n', '\r', 'e', 'x', 't'] {
+		if view == 4 && k in ['\n', '\r', 'e', 'x', 'o', 'w', 'd', 'b', 's', 't'] {
 			if report.len == 0 {
 				status = 'no report selected'
 				continue
@@ -1193,7 +1221,23 @@ fn tui(initial_api Repository, initial_label string) {
 				}
 				continue
 			}
-			if k == 'x' && api.repo == '' {
+			if k == 'o' && !os.exists(result_path(path)) {
+				status = 'no RESULT.md yet; press x to run a fix'
+				continue
+			}
+			if k == 'd' && !os.exists(advisory_path(path)) {
+				status = 'no ADVISORY.md yet; a confirmed fix (x) writes one'
+				continue
+			}
+			if k == 'w' && !os.exists(wip_path(path)) {
+				status = 'no fix is running for this report'
+				continue
+			}
+			if k == 's' && !os.exists(similar_path(path)) {
+				status = 'no SIMILAR.md yet; press b to search for similar bugs'
+				continue
+			}
+			if k in ['x', 'b'] && api.repo == '' {
 				status = 'Repository unavailable; wait for loading or press g to retry'
 				continue
 			}
@@ -1210,8 +1254,22 @@ fn tui(initial_api Repository, initial_label string) {
 					action_input('Press Enter to return (Ctrl+C/Esc also returns): ') or {}
 				}
 				loader.request(api, label, .git_status, true)
+			} else if k == 'b' {
+				if similar_tui(api, path) or {
+					println('error: ${err}')
+					true
+				} {
+					action_input('Press Enter to return (Ctrl+C/Esc also returns): ') or {}
+				}
 			} else {
-				view_text(os.read_file(path) or { 'error: ${err}' }) or { status = 'error: ${err}' }
+				shown := match k {
+					'o' { result_path(path) }
+					'w' { wip_path(path) }
+					'd' { advisory_path(path) }
+					's' { similar_path(path) }
+					else { path }
+				}
+				view_text(os.read_file(shown) or { 'error: ${err}' }) or { status = 'error: ${err}' }
 			}
 			raw()
 			loader.request(api, label, .reports, true)

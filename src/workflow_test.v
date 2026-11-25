@@ -303,3 +303,36 @@ fn test_render_prompts() {
 	reply := api.reply_instructions()
 	assert reply.contains('summary: <one line title') && !reply.contains('{{') && reply.ends_with(prompt_gitlab)
 }
+
+fn verdict_of(reply string) []string {
+	verdict, reason := fix_verdict(reply)
+	return [verdict, reason]
+}
+
+fn test_fix_verdict() {
+	assert verdict_of('Verdict: false positive\nReason: len is checked in the caller\n\n## Summary') == ['false positive', 'len is checked in the caller']
+	assert verdict_of('**Verdict:** False-positive\n**Reason:** `guarded`') == ['false positive', 'guarded']
+	assert verdict_of('Notes first\nVerdict: confirmed (ASan heap-buffer-overflow)\nReason: crashes') == ['confirmed', 'crashes']
+	assert verdict_of('Verdict: Already fixed by abc123') == ['already fixed', '']
+	assert verdict_of('## Summary\nno verdict here') == ['', '']
+}
+
+fn test_fix_outcome_marks_false_positives_invalid() ! {
+	dir := os.join_path(os.temp_dir(), 'gsadv-fix-test-${os.getpid()}')
+	os.setenv('XDG_STATE_HOME', os.join_path(dir, 'state'), true)
+	defer {
+		os.unsetenv('XDG_STATE_HOME')
+		os.rmdir_all(dir) or {}
+	}
+	path := os.join_path(dir, 'wave1', 'ANT-2026-TEST', 'REPORT.md')
+	os.mkdir_all(os.dir(path))!
+	os.write_file(path, '```\nANT-2026-TEST  [high]  CWE-416  memory-safety\nUse after free\n```\n')!
+	session := EditSession{repo: 'owner/repo', id: path, kind: 'fix', provider: 'github', host: 'github.com'}
+	api := Repository(GitHub{repo: 'owner/repo', host: 'github.com'})
+	assert fix_outcome(session, 'Verdict: confirmed\nReason: ASan reports a use after free') == 'Verdict for ANT-2026-TEST: confirmed: ASan reports a use after free'
+	assert api.marks()!.len == 0
+	assert fix_outcome(session, 'no verdict').contains('no Verdict line')
+	out := fix_outcome(session, 'Verdict: false positive\nReason: the pointer is reset before reuse')
+	assert out.contains('Marked ANT-2026-TEST invalid')
+	assert api.invalid_marks()! == {'report:ant-2026-test': 'false positive: the pointer is reset before reuse'}
+}

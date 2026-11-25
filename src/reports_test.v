@@ -1,6 +1,7 @@
 module main
 
 import os
+import term
 
 const sample_report = '```
 ============================================================================
@@ -64,4 +65,72 @@ fn test_move_to_attic() ! {
 	assert find_reports(base, 'Attic').len == 1
 	if _ := move_to_attic(os.join_path(base, 'REPORT.md'), base, 'Attic') { assert false, 'moved the base directory' }
 	if _ := move_to_attic(os.join_path(base, 'x/REPORT.md'), base, '') { assert false, 'accepted an empty attic' }
+}
+
+fn test_report_results() ! {
+	base := os.join_path(os.temp_dir(), 'gsadv-results-${os.getpid()}')
+	defer { os.rmdir_all(base) or {} }
+	for name in ['A', 'B', 'C'] {
+		os.mkdir_all(os.join_path(base, name))!
+		os.write_file(os.join_path(base, name, 'REPORT.md'), '```\nANT-${name}  [low]  CWE-476  dos\nNull\n```\n')!
+	}
+	os.write_file(os.join_path(base, 'A', 'RESULT.md'), '**Verdict:** confirmed\nReason: ASan crash\n')!
+	os.write_file(os.join_path(base, 'B', 'RESULT.md'), 'Summary without a verdict\n')!
+	os.write_file(os.join_path(base, 'C', 'SIMILAR.md'), 'No similar bugs\n')!
+	rows := find_reports(base, 'Attic')
+	assert rows.map(it[9]) == ['confirmed', 'done', '']
+	assert rows.map(it[10]) == ['', '', 'similar']
+	assert is_report(rows[0][0]) && !is_report(os.join_path(base, 'A', 'RESULT.md'))
+	assert similar_path(rows[2][0]) == os.join_path(base, 'C', 'SIMILAR.md')
+	assert term.strip_ansi(report_row(rows[0], 120)).contains(' confirmed ')
+	assert report_columns(120).contains('STATE')
+}
+
+fn test_report_wip_states() ! {
+	base := os.join_path(os.temp_dir(), 'gsadv-wip-${os.getpid()}')
+	defer { os.rmdir_all(base) or {} }
+	report := os.join_path(base, 'ANT-1', 'REPORT.md')
+	os.mkdir_all(os.dir(report))!
+	os.write_file(report, '```\nANT-1  [low]  CWE-476  dos\nNull\n```\n')!
+	assert report_state(report) == ''
+	wip := start_wip(report, '/tmp/recovery')
+	assert wip == wip_path(report) && os.read_file(wip)!.contains('Recovery files: /tmp/recovery')
+	assert report_state(report) == 'working'
+	os.write_file(result_path(report), 'Verdict: confirmed\n')!
+	assert report_state(report) == 'working'
+	// A process id that cannot exist on this host means the run died.
+	os.write_file(wip, 'gsadv fix pid=999999999 host=${os.hostname()!} started=x\n')!
+	assert report_state(report) == 'stopped'
+	os.write_file(wip, 'gsadv fix pid=1 host=elsewhere.example started=x\n')!
+	assert report_state(report) == 'working'
+	os.rm(wip)!
+	assert report_state(report) == 'confirmed'
+	assert report_columns(120).contains('STATE') && !report_columns(120).contains('RESULT')
+}
+
+fn test_finding_advisory_context() ! {
+	assert ant_id('Fix overflow ##crash\n\n* OSS-SCAN - ANT-2026-6PEMX3GV\n* More') == 'ANT-2026-6PEMX3GV'
+	assert ant_id('ANT-2026-short and ANT-2026-ABCDEFGHI and ANT-26-ABCDEFGH') == ''
+	assert ant_id('see ANT-2026-ABCDEFGH.') == 'ANT-2026-ABCDEFGH'
+	base := os.join_path(os.temp_dir(), 'gsadv-finding-${os.getpid()}')
+	os.setenv('GSADV_ANTFIND', base, true)
+	defer {
+		os.unsetenv('GSADV_ANTFIND')
+		os.rmdir_all(base) or {}
+	}
+	dir := os.join_path(base, 'wave1', 'Attic', 'ANT-2026-ABCDEFGH')
+	os.mkdir_all(dir)!
+	os.write_file(os.join_path(dir, 'REPORT.md'), 'report')!
+	assert find_finding(base, 'ANT-2026-ABCDEFGH') == dir
+	assert find_finding(base, 'ANT-2026-ZZZZZZZZ') == ''
+	commit := 'Fix it ##crash\n\n* OSS-SCAN - ANT-2026-ABCDEFGH\n'
+	assert finding_context(commit).contains('its report is ${dir}/REPORT.md')
+	os.write_file(os.join_path(dir, 'ADVISORY.md'), 'summary: Verified overflow\n---\nDetails\n')!
+	context := finding_context(commit)
+	assert context.contains('Trust it as the starting point') && context.contains('summary: Verified overflow')
+	assert finding_context('Fix it without a finding') == ''
+	prompt := render(prompt_new, {
+		'finding': context
+	})
+	assert prompt.contains('summary: Verified overflow') && !prompt.contains('{{finding}}')
 }
