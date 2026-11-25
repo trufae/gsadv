@@ -83,7 +83,11 @@ fn test_report_results() ! {
 	assert rows.map(it[10]) == ['', '', 'similar']
 	assert is_report(rows[0][0]) && !is_report(os.join_path(base, 'A', 'RESULT.md'))
 	assert similar_path(rows[2][0]) == os.join_path(base, 'C', 'SIMILAR.md')
-	assert term.strip_ansi(report_row(rows[0], 120)).contains(' confirmed ')
+	assert report_row(rows[0], 120, false).contains(' 👍 ')
+	mut list := TuiList{}
+	list.rebuild(rows, [], AdvisoryLinks{}, 4)
+	list.mark(rows, {mark_key(rows[0], 4): Mark{kind: 'invalid'}}, 4)
+	assert term.strip_ansi(list.line(0, rows, [], 4, 120, true)).contains(' 👍 ❌ ')
 	assert report_columns(120).contains('STATE')
 }
 
@@ -98,20 +102,29 @@ fn test_report_wip_states() ! {
 	assert wip == wip_path(report) && os.read_file(wip)!.contains('Recovery files: /tmp/recovery')
 	assert report_state(report) == 'working'
 	os.write_file(result_path(report), 'Verdict: confirmed\n')!
-	assert report_state(report) == 'working'
+	assert report_state(report) == 'working confirmed'
 	// A process id that cannot exist on this host means the run died.
 	os.write_file(wip, 'gsadv fix pid=999999999 host=${os.hostname()!} started=x\n')!
-	assert report_state(report) == 'stopped'
+	assert report_state(report) == 'stopped confirmed'
 	os.write_file(wip, 'gsadv fix pid=1 host=elsewhere.example started=x\n')!
-	assert report_state(report) == 'working'
+	assert report_state(report) == 'working confirmed'
 	os.rm(wip)!
 	assert report_state(report) == 'confirmed'
 	os.write_file(advisory_path(report), 'summary: Null dereference\n')!
-	assert report_state(report) == 'advisory'
+	assert report_state(report) == 'confirmed advisory'
 	start_wip(report, '/tmp/recovery')
-	assert report_state(report) == 'working'
+	assert report_state(report) == 'working confirmed advisory'
 	os.rm(wip)!
 	assert report_columns(120).contains('STATE') && !report_columns(120).contains('RESULT')
+}
+
+fn test_report_state_icons_fit_the_column() {
+	assert report_state_cell('working confirmed advisory', true) == '🤖 👍 📝 ❌'
+	assert report_state_cell('false-pos', true).trim_space() == '❌'
+	assert report_state_cell('stopped fixed-old', false).trim_space() == '🛑 🔧'
+	assert report_state_cell('unclear', false).trim_space() == '❓'
+	assert report_state_cell('done', false).trim_space() == '✅'
+	assert report_state_cell('', false) == ' '.repeat(report_state_width)
 }
 
 fn test_finding_advisory_context() ! {

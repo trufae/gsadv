@@ -254,11 +254,11 @@ Reports: REPORT.md files under antfind, skipping attic; enter views, e edits, f/
    a then f confirms with a reproducer, then fixes and commits locally (OSS-SCAN - <id>).
    a then F reviews and applies the suggested patch without building or running it, then drafts
    the advisory from the files already in the report directory.
-   a false positive is marked invalid. While either fix runs, the agent output is copied to WIP.txt next to
-   the report (w views it) and STATE shows working, or stopped if the run died. The agent summary
-   is then saved as RESULT.md (o views it) and STATE shows its verdict. A confirmed fix also writes
-   an advisory draft, ADVISORY.md (d views it); n on the fix commit drafts the advisory from it. b searches for similar bugs using the report
-   as a template and saves them as SIMILAR.md (s views it). t moves the report to the attic
+   a false positive is marked invalid. w views agent output (WIP.txt), o views the result (RESULT.md),
+   and d views the advisory draft (ADVISORY.md); n on the fix commit drafts the advisory from it.
+   STATE: 🤖 agent running, 🛑 stopped, 👍 confirmed, 📝 advisory draft, ❌ invalid or false positive,
+   🔧 already fixed, ❓ inconclusive, ✅ finished without a verdict.
+   b saves similar bugs to SIMILAR.md (s views it). t moves the report to the attic.
 ?: this help; q or Ctrl+C: quit
 
 Severity: 🔴 critical, 🟠 high, 🟡 medium, 🟢 low, ⚪ unknown.
@@ -1085,12 +1085,8 @@ fn tui(initial_api Repository, initial_label string) {
 			'Updating ${pending_action}... You can keep browsing; other changes and quitting wait for completion.'
 		} else if status != '' {
 			status
-		} else if report.len >= 11 && (report[9] != '' || report[10] != '') {
-			'${report[3]}' + if report[9] in ['working', 'stopped'] { ' | fix ${report[9]} (w views WIP.txt)' } else if report[9] == 'advisory' { ' | advisory draft (d views ADVISORY.md)' } else if report[9] != '' { ' | state: ${report[9]} (o views RESULT.md)' } else { '' } +
-				if report[10] != '' { ' | similar bugs saved (s views SIMILAR.md)' } else { '' } +
-				if report[9] != 'advisory' && os.exists(advisory_path(report[0])) { ' | advisory draft (d views ADVISORY.md)' } else { '' } + ' | ${report[0]}'
 		} else if report.len > 0 {
-			'${report[3]} | ${report[1]} | ${report[6]} | ${report[5]} | ${report[0]}'
+			report_hint(report)
 		} else if id != '' {
 			cve := match advs[ai][2] {
 				'requested*' { 'CVE request recorded locally; g reload, s status' }
@@ -1135,7 +1131,7 @@ fn tui(initial_api Repository, initial_label string) {
 				k = tui_dialog('Actions for ${report[3]}\n${hint}' + if mark_note == '' { '' } else { '\n${mark_note}' } +
 					'\n\nv view REPORT.md\ne edit REPORT.md in \$EDITOR\nf fix with AI after reproducing the bug (commits locally)\n' +
 					'F quickfix with AI using the suggested patch (no builds or tests)\n' +
-					if os.exists(wip_path(report[0])) { 'w view WIP.txt (fix ${report[9]})\n' } else { '' } +
+					if os.exists(wip_path(report[0])) { 'w view WIP.txt\n' } else { '' } +
 					if os.exists(result_path(report[0])) { 'o view RESULT.md\n' } else { '' } +
 					if os.exists(advisory_path(report[0])) { 'd view ADVISORY.md (advisory draft from the fix)\n' } else { '' } +
 					'b find similar bugs using it as a template (saved as SIMILAR.md)\n' +

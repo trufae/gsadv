@@ -67,12 +67,14 @@ While either fix runs, its output is copied to `WIP.txt` next to `REPORT.md`.
 The first line names the fixing process. Press `w` to read it. The summary is
 then saved as `RESULT.md` (replacing
 an earlier one) and `WIP.txt` is removed; after a failed or interrupted run it stays
-for inspection. These files move to the attic with the finding. The STATE column,
-which every running gsadv refreshes each second, shows `working` during a run,
-`stopped` when its process is gone, `advisory` once `ADVISORY.md` exists next to
-the report (`d` reads it), and otherwise the verdict: `confirmed` (review,
-commit, push or move to the attic), `false-pos`, `fixed-old` (already fixed),
-`unclear` (inconclusive) or `done` (no verdict line). Press `o` to read `RESULT.md`.
+for inspection. These files move to the attic with the finding. The STATE column
+refreshes each second and shows every applicable icon.
+
+- 🤖 Agent running or 🛑 run stopped. Press `w` to read `WIP.txt`.
+- 👍 Confirmed, ❌ marked invalid or false positive, 🔧 already fixed,
+  ❓ inconclusive, or ✅ finished without a verdict. Press `o` to read `RESULT.md`.
+- 📝 Advisory draft exists. Press `d` to read `ADVISORY.md`.
+
 Both fix prompts point the agent at the report's directory and list its supporting
 files. After committing a confirmed fix, the agent writes `ADVISORY.md` next to
 the report. Press `d` to read it. If the agent leaves the draft in the checkout,

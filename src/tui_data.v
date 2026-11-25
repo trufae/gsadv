@@ -222,13 +222,13 @@ fn (mut list TuiList) line(index int, entries [][]string, advs [][]string, view 
 	if index !in list.formatted {
 		linked := list.links[index]
 		a := if linked >= 0 { advs[linked] } else { []string{} }
+		kind := list.marks[index].kind
 		line := match view {
 			0 { row(entries[index], width) }
 			1 { commit_row(entries[index], a, width) }
-			4 { report_row(entries[index], width) }
+			4 { report_row(entries[index], width, kind == 'invalid') }
 			else { issue_row(entries[index], a, width) }
 		}
-		kind := list.marks[index].kind
 		normal := marked_row(if kind == 'ignore' { term.dim(term.strip_ansi(line)) } else { line }, mark_symbol(kind), width)
 		list.formatted[index] = TuiRow{normal, term.inverse(term.strip_ansi(normal))}
 	}

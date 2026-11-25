@@ -1,17 +1,17 @@
 module main
 
 import os
-import term
 import time
 
 // Rows are [path, severity, type, id, title, location, cwe, group, date, state, similar].
-// state is working or stopped while a fix run's WIP.txt exists, then the verdict in its RESULT.md;
+// state contains the activity, verdict, and advisory labels that apply;
 // similar is set when a similar-bugs search saved SIMILAR.md there.
 // Findings start with a fenced header:
 //   ANT-2026-XXXXXXXX  [high]  CWE-416  memory-safety
 //   Title
 //   Location: file.c:123  in func()
 const report_states = ['all', 'critical', 'high', 'medium', 'low', 'bug']
+const report_state_width = 11
 
 const report_cwe_types = {
 	'CWE-416':  'UAF'
@@ -242,11 +242,13 @@ fn wip_alive(path string) bool {
 }
 
 fn report_state(report string) string {
+	mut labels := []string{cap: 3}
 	wip := wip_path(report)
-	if os.exists(wip) { return if wip_alive(wip) { 'working' } else { 'stopped' } }
-	// Only a confirmed fix writes ADVISORY.md, so it supersedes the verdict.
-	if os.exists(advisory_path(report)) { return 'advisory' }
-	return report_result(report)
+	if os.exists(wip) { labels << if wip_alive(wip) { 'working' } else { 'stopped' } }
+	result := report_result(report)
+	if result != '' { labels << result }
+	if os.is_file(advisory_path(report)) { labels << 'advisory' }
+	return labels.join(' ')
 }
 
 fn advisory_path(report string) string {
@@ -340,17 +342,37 @@ fn report_result(report string) string {
 	}
 }
 
-fn result_cell(result string) string {
-	cell := '${result:-9}'
-	return match result {
-		'working' { term.green(cell) }
-		'stopped' { term.red(cell) }
-		'confirmed' { term.yellow(cell) }
-		'advisory' { term.magenta(cell) }
-		'false-pos', 'fixed-old' { term.dim(cell) }
-		'unclear' { term.cyan(cell) }
-		else { cell }
+fn report_state_cell(labels string, invalid bool) string {
+	mut icons := labels.fields().map(match it {
+		'working' { '🤖' }
+		'stopped' { '🛑' }
+		'confirmed' { '👍' }
+		'advisory' { '📝' }
+		'false-pos' { '❌' }
+		'fixed-old' { '🔧' }
+		'unclear' { '❓' }
+		'done' { '✅' }
+		else { '' }
+	})
+	if invalid && '❌' !in icons { icons << '❌' }
+	return table_cell(icons.join(' '), report_state_width)
+}
+
+fn report_hint(report []string) string {
+	if report.len < 11 || (report[9] == '' && report[10] == '') {
+		return '${report[3]} | ${report[1]} | ${report[6]} | ${report[5]} | ${report[0]}'
 	}
+	mut details := [report[3]]
+	for state in report[9].fields() {
+		details << match state {
+			'working', 'stopped' { 'fix ${state} (w views WIP.txt)' }
+			'advisory' { 'advisory draft (d views ADVISORY.md)' }
+			else { 'result: ${state} (o views RESULT.md)' }
+		}
+	}
+	if report[10] != '' { details << 'similar bugs saved (s views SIMILAR.md)' }
+	details << report[0]
+	return details.join(' | ')
 }
 
 fn reports_base() string {
@@ -359,25 +381,26 @@ fn reports_base() string {
 }
 
 fn report_columns(w int) string {
+	state := table_cell('STATE', report_state_width)
 	return if w < 60 { 'TITLE' } else if w < 90 {
-		'   ${'TYPE':-14} ${'STATE':-9} TITLE'
+		'   ${'TYPE':-14} ${state} TITLE'
 	} else if w < 130 {
-		'   ${'ID':-18} ${'TYPE':-14} ${'STATE':-9} TITLE'
+		'   ${'ID':-18} ${'TYPE':-14} ${state} TITLE'
 	} else {
-		'   ${'ID':-18} ${'TYPE':-14} ${'STATE':-9} ${'CWE':-9} ${'GROUP':-24} TITLE'
+		'   ${'ID':-18} ${'TYPE':-14} ${state} ${'CWE':-9} ${'GROUP':-24} TITLE'
 	}
 }
 
-fn report_row(r []string, w int) string {
+fn report_row(r []string, w int, invalid bool) string {
 	if r.len < 10 { return clip_line(r.join(' '), line_width(w)) }
-	result := result_cell(r[9])
+	state := report_state_cell(r[9], invalid)
 	icon := if r[1] == 'bug' { '⚫' } else { severity_icon(r[1]) }
 	line := if w < 60 { r[4] } else if w < 90 {
-		'${icon} ${r[2]:-14} ${result} ${r[4]}'
+		'${icon} ${r[2]:-14} ${state} ${r[4]}'
 	} else if w < 130 {
-		'${icon} ${r[3]:-18} ${r[2]:-14} ${result} ${r[4]}'
+		'${icon} ${r[3]:-18} ${r[2]:-14} ${state} ${r[4]}'
 	} else {
-		'${icon} ${r[3]:-18} ${r[2]:-14} ${result} ${r[6]:-9} ${table_cell(r[7], 24)} ${r[4]}'
+		'${icon} ${r[3]:-18} ${r[2]:-14} ${state} ${r[6]:-9} ${table_cell(r[7], 24)} ${r[4]}'
 	}
 	return clip_line(line, line_width(w))
 }
