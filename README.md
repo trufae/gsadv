@@ -16,18 +16,18 @@ Fill in the fields and sections or paste a complete advisory; leaving the templa
 unchanged or emptying it cancels. `gsadv new` opens the same template from the CLI.
 Lowercase `n` and `gsadv new <commit|url>` draft with AI.
 Use `J`/`K` or AvPág/RePág (Page Down/Page Up) to move down/up ten rows.
-Press `l` to change the shared issue/PR/MR label filter; an empty value shows all
-labels. Results appear page by page while the remaining history loads in the
-background. Changing the label takes effect after the current page finishes.
+Switch to the next/previous tab with Tab/Shift-Tab, `l`/`h` or the right/left arrows.
+The shared issue/PR/MR label filter is the `label` setting (press `,`); an empty
+value shows all labels. Results appear page by page while the remaining history
+loads in the background. Changing the label takes effect after the current page finishes.
 In the issues or PR/MR tab, press `f` once to show only open items. Press `f` again
 for closed items, or `F` to go back; GitLab MRs also have a merged filter. State
-filters are remembered separately for each tab and combine with `l` (label) and
+filters are remembered separately for each tab and combine with the label and
 `/` (text) filters.
 
-The commits tab only lists commits whose message matches `GSADV_GREP`
-(default `##(crash|security|vulnerability|sandbox)`). In that tab, press `l` to
-change the `git log -E --grep` regex; an empty value shows all commits. Use
-`git config --local gsadv.grep ''` to show all commits by default in a repository.
+The commits tab only lists commits whose message matches the `grep` setting
+(default `##(crash|security|vulnerability|sandbox)`), a `git log -E --grep` regex;
+an empty value shows all commits.
 
 The Reports tab lists every `REPORT.md` below the `antfind` directory (default
 `ANTFIND` at the project root), skipping any directory named by `attic` (default
@@ -39,12 +39,14 @@ OOB-READ, INT-UNDERFLOW, CMD-INJ, OOM, HANG, ...) is derived from the CWE, or fr
 keywords in the title or body when the CWE is missing or unknown. Press `f`/`F`
 to filter by severity, Enter to read a report and `e` to edit it.
 
-Press `,` to open the settings screen: move with `j`/`k` or the arrows, press
-Enter to change a value and `d` to reset it to the default. Values are saved per
-project in `.gsadv.ini` at the root of the Git checkout (or the current directory
-outside Git), one `key=value` per line; `#` and `;` start comments. Other `gsadv`
-settings such as `label` or `grep` can also be set there. `GSADV_*` environment
-variables override the file, and the file overrides `git config gsadv.*`.
+Press `,` to open the settings screen (`grep`, `label`, `antfind`, `attic`): move
+with `j`/`k` or the arrows, press Enter to change a value and `d` to reset it to the
+default. Changes apply when you leave the screen and are saved per project in
+`.gsadv.ini` at the root of the Git checkout (or the current directory outside Git),
+one `key=value` per line; `#` and `;` start comments. Other `gsadv` settings, such
+as `ai`, can also be set there. `GSADV_*` environment variables and the `--label`/
+`--grep` flags override the file for that run (the screen marks such values as not
+saved), and the file overrides `git config gsadv.*`.
 
 A `!` in the left margin marks a saved local invalid tag. These are manual triage
 decisions with a reason, separate from advisory and release state. Selecting a

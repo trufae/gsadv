@@ -154,7 +154,7 @@ def checks(binary, root):
         assert not ui.read(0.3)
 
         # Every tab remains bounded through narrow and short resizes.
-        for _ in range(4):
+        for _ in range(5):
             ui.send('\t')
             frame(ui, screen)
             for size in ((7, 2), (30, 4), (120, 24)):
