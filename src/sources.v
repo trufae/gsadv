@@ -65,16 +65,31 @@ fn commit_grep() string {
 	return project_setting('grep')
 }
 
-// Matching commits in the cwd checkout: sha, date, subject.
+// Matching commits in the cwd checkout: sha, date, subject and the ADVISORY.md of the
+// finding the message references (ANT-...), or ''.
 fn commits() ![][]string {
 	grep := commit_grep()
-	mut args := ['git', 'log', '-n', '2000', '--format=%H%x09%as%x09%s']
+	mut args := ['git', 'log', '-z', '-n', '2000', '--format=%H%x09%as%x09%s%x09%b']
 	if grep != '' { args << ['-E', '--grep=${grep}'] }
 	r := os.exec(args)
 	if r.exit_code != 0 {
 		return error(r.output.trim_space())
 	}
-	return r.output.split_into_lines().filter(it != '').map(it.split('\t'))
+	mut findings := map[string]string{}
+	mut indexed := false
+	mut rows := [][]string{}
+	for entry in r.output.split('\x00') {
+		f := entry.trim_left('\n').split_nth('\t', 4)
+		if f.len < 3 { continue }
+		id := ant_id(f[2] + '\n' + f#[3..].join(''))
+		if id != '' && !indexed {
+			finding_dirs(reports_base(), mut findings)
+			indexed = true
+		}
+		path := os.join_path(findings[id] or { '' }, 'ADVISORY.md')
+		rows << [f[0], f[1], f[2], if id in findings && os.is_file(path) { path } else { '' }]
+	}
+	return rows
 }
 
 // Porcelain -z keeps filenames opaque, including newlines and rename sources.

@@ -309,6 +309,18 @@ fn find_finding(base string, id string) string {
 	return ''
 }
 
+// Finding directories below dir by ID, including the attic.
+fn finding_dirs(dir string, mut dirs map[string]string) {
+	for name in os.ls(dir) or { return } {
+		path := os.join_path(dir, name)
+		if !os.is_dir(path) || os.is_link(path) { continue }
+		if name.starts_with('ANT-') && os.is_file(os.join_path(path, 'REPORT.md')) && name !in dirs {
+			dirs[name] = path
+		}
+		finding_dirs(path, mut dirs)
+	}
+}
+
 // The ADVISORY.md of the finding a fix commit message references, or '' when there is none.
 fn commit_advisory(commit string) string {
 	r := os.exec(['git', 'log', '-1', '--format=%B', '--no-show-signature', commit, '--'])

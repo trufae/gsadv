@@ -239,7 +239,8 @@ m: mark the selected item for everyone using gsadv on this repository (other ter
    Marks are manual triage decisions, separate from advisory and release state.
 enter: view advisory/commit/issue/PR/report; e: edit advisory or report; r: AI review
 n: new advisory: a AI draft, m manual draft, i import the ADVISORY.md of the finding
-   referenced by the commit message (ANT-...) or of the selected report
+   referenced by the commit message (ANT-...) or of the selected report;
+   commits with one ready to import show 📝 ADVISORY.md until an advisory is linked
 N: write a draft manually from a template in \$EDITOR
 M: edit and post a discussion comment on the selected issue/PR/MR
 b: find similar bugs using the selected advisory or source as a template
@@ -318,14 +319,22 @@ fn commit_row(c []string, a []string, w int) string {
 	if c.len < 3 {
 		return clip_line(c.join(' '), line_width(w))
 	}
-	mark := if a.len < 5 { term.dim('${'-':-20}') } else { color(a[1], '${a[0]:-20}') }
+	// A finding's ADVISORY.md ready to import stands in until an advisory exists.
+	draft := a.len < 5 && c.len > 3 && c[3] != ''
+	mark := if a.len >= 5 {
+		color(a[1], '${a[0]:-20}')
+	} else if draft {
+		table_cell('📝 ADVISORY.md', 20)
+	} else {
+		term.dim('${'-':-20}')
+	}
 	severity := if a.len >= 5 && severity_icon(a[3]) != '⚪' {
 		a[3]
 	} else {
 		commit_severity(c[2])
 	}
 	line := if w < 40 { c[2] } else if w < 80 {
-		'${severity_icon(severity)} ${c[0]#[..10]} ${c[2]}'
+		'${severity_icon(severity)} ${c[0]#[..10]} ${if draft { '📝 ' } else { '' }}${c[2]}'
 	} else { '${severity_icon(severity)} ${c[0]#[..10]} ${c[1]} ${mark} ${c[2]}' }
 	return clip_line(line, line_width(w))
 }
