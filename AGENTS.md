@@ -12,10 +12,13 @@ GitLab disclosures stored as confidential labeled issues.
 - `src/workflow.v` handles AI, editor and advisory review workflows; `src/advisory.v`
   defines the advisory types, editable format parser and source linking.
 - `src/sources.v` parses commit/issue/PR inputs and discovers local fix commits.
+- `src/settings.v` reads and writes the per-project `.gsadv.ini` and draws the settings
+  screen; `src/reports.v` finds, classifies and formats `REPORT.md` files for the Reports tab.
 - `README.md` documents usage and includes design notes. Check the source for
   current behavior; design notes may describe ideas that are not implemented.
 - The CLI name and default Makefile binary are `gsadv`; `BIN` is overridable.
-  Configuration uses `GSADV_*` environment variables with legacy `GHADV_*` aliases. Keep those
+  Configuration uses `GSADV_*` environment variables with legacy `GHADV_*` aliases,
+  then `.gsadv.ini`, then `git config gsadv.*`. Keep those
   interfaces stable unless a change is requested.
 
 ## Development

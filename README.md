@@ -29,6 +29,23 @@ The commits tab only lists commits whose message matches `GSADV_GREP`
 change the `git log -E --grep` regex; an empty value shows all commits. Use
 `git config --local gsadv.grep ''` to show all commits by default in a repository.
 
+The Reports tab lists every `REPORT.md` below the `antfind` directory (default
+`ANTFIND` at the project root), skipping any directory named by `attic` (default
+`Attic`). Rows come from the fenced header at the top of each report
+(`ID  [severity]  CWE-N  class`, title and `Location:` lines) and are sorted by
+severity. The severity circle uses the advisory colors; ⚫ marks reports tagged
+`[NOT SECURITY]`. The type column (UAF, DOUBLE-FREE, STACK-OVF, HEAP-OVF,
+OOB-READ, INT-UNDERFLOW, CMD-INJ, OOM, HANG, ...) is derived from the CWE, or from
+keywords in the title or body when the CWE is missing or unknown. Press `f`/`F`
+to filter by severity, Enter to read a report and `e` to edit it.
+
+Press `,` to open the settings screen: move with `j`/`k` or the arrows, press
+Enter to change a value and `d` to reset it to the default. Values are saved per
+project in `.gsadv.ini` at the root of the Git checkout (or the current directory
+outside Git), one `key=value` per line; `#` and `;` start comments. Other `gsadv`
+settings such as `label` or `grep` can also be set there. `GSADV_*` environment
+variables override the file, and the file overrides `git config gsadv.*`.
+
 A `!` in the left margin marks a saved local invalid tag. These are manual triage
 decisions with a reason, separate from advisory and release state. Selecting a
 tagged item shows its reason below the list; press `i` to read or edit the full

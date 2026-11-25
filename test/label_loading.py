@@ -78,9 +78,13 @@ def wait_for_page(ui, root, page, start=0):
 
 
 def set_label(ui, label):
-    ui.send('l')
-    ui.expect('Label: ')
+    ui.send(',')
+    ui.expect('Settings |')
+    ui.send('j\r')
+    ui.expect('Set label in')
     ui.send('\x15' + label + '\r')
+    ui.expect('Saved label.')
+    ui.send('q')
 
 
 def checks(binary, root, provider, scenario):
@@ -96,48 +100,46 @@ def checks(binary, root, provider, scenario):
     title = 'PRs' if provider == 'github' else 'MRs'
     with Terminal(binary, root, 'tui', size=(200, 30), extra_env={
             'GSADV_PROVIDER': provider, 'GSADV_LABEL': 'security'}) as ui:
-        ui.expect(f'{title} 1 (label: security)')
+        ui.expect(f'{title} 1 (all)')
         ui.send('\t\t\t')
         ui.expect('Labelled pull')
         set_label(ui, '')
         if scenario == 'late-pull':
-            screen = ui.expect(f'[{title} 0 (all labels) loading...]')
+            screen = ui.expect(f'[{title} 0 (all) loading...]')
             ui.expect('Loading... You can switch tabs or quit while requests run.')
             assert 'No entries.' not in screen
             wait_for_page(ui, root, 2)
             ui.send('\x1b[Z')
-            ui.expect('[issues 100 (all labels) loading...]')
+            ui.expect('[issues 100 (all) loading...]')
             ui.expect('Unfiltered issue 1')
             ui.send('\t')
-            ui.expect(f'[{title} 0 (all labels) loading...]')
+            ui.expect(f'[{title} 0 (all) loading...]')
             (root / 'hold-page').unlink()
-            ui.expect(f'[{title} 101 (all labels)]')
+            ui.expect(f'[{title} 101 (all)]')
             ui.send('q')
             ui.finish()
             return
-        ui.expect(f'[{title} 100 (all labels) loading...]')
+        ui.expect(f'[{title} 100 (all) loading...]')
         ui.expect('Unfiltered pull 1')
         wait_for_page(ui, root, 2)
         # Navigation and text filtering work while the next page is blocked.
         ui.send('/')
         ui.expect('Filter text:')
         ui.send('Unfiltered pull 10\r')
-        ui.expect(f'[{title} 2 (all labels) loading...]')
+        ui.expect(f'[{title} 2 (all) loading...]')
         ui.send('/')
         ui.expect('Filter text:')
         ui.send('\r')
-        ui.expect(f'[{title} 100 (all labels) loading...]')
+        ui.expect(f'[{title} 100 (all) loading...]')
         if scenario == 'change':
             set_label(ui, 'intermediate')
-            ui.expect('label: intermediate')
             set_label(ui, 'other label')
-            ui.expect('label: other label')
             (root / 'hold-page').unlink()
-            ui.expect(f'[{title} 1 (label: other label)]')
+            ui.expect(f'[{title} 1 (all)]')
             ui.expect('Other label pull')
             # A full repaint cannot contain rows from the abandoned label.
             ui.send('\t')
-            ui.expect('[advisories ' if provider == 'github' else '[disclosures ')
+            ui.expect('[Reports ')
             ui.send('\x1b[Z')
             screen = ui.expect('Other label pull')
             assert 'Unfiltered pull' not in screen and 'Labelled pull' not in screen
@@ -148,18 +150,18 @@ def checks(binary, root, provider, scenario):
             (root / 'hold-page').unlink()
             ui.expect('HTTP 503: fixture page unavailable')
             ui.send('\t')
-            ui.expect('[advisories ' if provider == 'github' else '[disclosures ')
+            ui.expect('[Reports ')
             ui.send('\x1b[Z')
-            ui.expect(f'[{title} 100 (all labels)]')
+            ui.expect(f'[{title} 100 (all)]')
             ui.expect('Unfiltered pull 1')
         else:
             (root / 'hold-page').unlink()
-            ui.expect(f'[{title} {count} (all labels)]')
+            ui.expect(f'[{title} {count} (all)]')
             assert {c['page'] for c in calls(root) if c['label'] == ''} == {1, 2, 3}
             ui.send('/')
             ui.expect('Filter text:')
             ui.send('Unfiltered pull 200\r')
-            ui.expect(f'[{title} 1 (all labels)]')
+            ui.expect(f'[{title} 1 (all)]')
             ui.expect('Unfiltered pull 200')
             # A refresh must retain the complete list and a late-page selection,
             # including when a subsequent page fails.
@@ -168,9 +170,9 @@ def checks(binary, root, provider, scenario):
             ui.send('g')
             wait_for_page(ui, root, 2, start=before)
             ui.send('\t')
-            ui.expect('[advisories ' if provider == 'github' else '[disclosures ')
+            ui.expect('[Reports ')
             ui.send('\x1b[Z')
-            ui.expect(f'[{title} 1 (all labels)]')
+            ui.expect(f'[{title} 1 (all)]')
             ui.expect('Unfiltered pull 200')
             (root / 'fail-page').touch()
             (root / 'hold-page').unlink()
@@ -178,7 +180,7 @@ def checks(binary, root, provider, scenario):
             ui.send('/')
             ui.expect('Filter text:')
             ui.send('\r')
-            ui.expect(f'[{title} {count} (all labels)]')
+            ui.expect(f'[{title} {count} (all)]')
         ui.send('q')
         ui.finish()
 

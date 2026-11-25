@@ -62,7 +62,7 @@ fn (api Repository) source(input string) !Source {
 
 // Commit subject regex for git log; empty lists all commits.
 fn commit_grep() string {
-	return setting('GREP') or { '##(crash|security|vulnerability|sandbox)' }
+	return project_setting('grep')
 }
 
 // Matching commits in the cwd checkout: sha, date, subject.

@@ -227,7 +227,7 @@ fn input_line(prompt string, text string, width int) string {
 	return label + tail
 }
 
-const tui_help = 'tab/shift-tab: next/previous view (advisories/commits/issues/PRs or MRs)
+const tui_help = 'tab/shift-tab, l/h or right/left: next/previous view (advisories/commits/issues/PRs or MRs/Reports)
 j/k or mouse wheel: move; J/K or PgDn/PgUp (AvPág/RePág): move ten rows
 enter: view advisory/commit/issue/PR; e: edit advisory; r: AI review selected item; n: AI draft
 N: write a draft manually from a template in \$EDITOR
@@ -241,9 +241,10 @@ These tags are manual triage decisions, separate from advisory and release state
 s: advisory status; m: actions menu; f/F: next/previous state filter in the current tab
 In issues/PRs/MRs, press f once from all to show only open items; each tab remembers its filter.
 /: filter the current list by text (Enter applies; empty clears; Esc cancels)
-l: change the shared issues/PRs/MRs label filter (empty shows all labels);
-   in commits, change the git log --grep regex (empty shows all commits)
 g: reload; A: cycle AI agent
+,: project settings saved in .gsadv.ini: issues/PRs/MRs label (empty shows all labels),
+   commits git log -E --grep regex (empty shows all), Reports antfind and attic directories
+Reports: REPORT.md files under antfind, skipping attic; enter views, e edits, f/F severity
 ?: this help; q or Ctrl+C: quit
 
 Severity: 🔴 critical, 🟠 high, 🟡 medium, 🟢 low, ⚪ unknown.
@@ -834,29 +835,32 @@ fn tui(initial_api Repository, initial_label string) {
 	mut cms := [][]string{}
 	mut items := [][]string{}
 	mut prs := [][]string{}
+	mut reports := [][]string{}
+	mut reports_dir := ''
 	mut git_status := 'loading...'
 	mut loader := TuiLoader{}
 	action_results := chan TuiActionResult{cap: 1}
 	mut pending_action := ''
-	mut loaded := [false, false, false, false]
-	mut lists := []TuiList{len: 4}
-	mut changed := [true, true, true, true]
+	mut loaded := [false, false, false, false, false]
+	mut lists := []TuiList{len: 5}
+	mut changed := [true, true, true, true, true]
 	mut links := AdvisoryLinks{}
-	mut view := 0 // 0 advisories, 1 git, 2 issues, 3 PRs/MRs
-	mut sel := [0, 0, 0, 0]
-	mut top := [0, 0, 0, 0]
+	mut view := 0 // 0 advisories, 1 git, 2 issues, 3 PRs/MRs, 4 reports
+	mut sel := [0, 0, 0, 0, 0]
+	mut top := [0, 0, 0, 0, 0]
 	mut status := ''
 	mut invalid := map[string]string{}
 	if api.repo != '' {
 		invalid = api.invalid_marks() or { status = 'local invalid tags: ${err}'; map[string]string{} }
 	}
-	mut state_filters := [0, 0, 0, 0]
-	mut queries := ['', '', '', '']
+	mut state_filters := [0, 0, 0, 0, 0]
+	mut queries := ['', '', '', '', '']
 	mut grep := commit_grep()
 	mut screen := TuiScreen{}
 	raw()
 	loader.request(api, label, .commits, false)
 	loader.request(api, label, .git_status, false)
+	loader.request(api, label, .reports, false)
 	if api.repo == '' {
 		loader.request(api, label, .repository, false)
 	} else {
@@ -881,7 +885,7 @@ fn tui(initial_api Repository, initial_label string) {
 						}
 					}
 				}
-				changed = [true, true, true, true]
+				changed = [true, true, true, true, true]
 				if status.starts_with('CVE request accepted;') {
 					status = 'CVE request accepted; assignment is asynchronous. g reload, s status'
 				}
@@ -899,9 +903,9 @@ fn tui(initial_api Repository, initial_label string) {
 				.repository {
 					if result.error == '' && result.text != '' {
 						api = result.repository
-						state_filters = [0, 0, 0, 0]
+						state_filters[0], state_filters[2], state_filters[3] = 0, 0, 0
 						invalid = api.invalid_marks() or { status = 'local invalid tags: ${err}'; map[string]string{} }
-						changed = [true, true, true, true]
+						changed = [true, true, true, true, true]
 						loader.request(api, label, .advisories, false)
 						loader.request(api, label, .issues, false)
 					}
@@ -910,7 +914,7 @@ fn tui(initial_api Repository, initial_label string) {
 					if result.error == '' && result.rows != advs {
 						advs = result.rows
 						links = advisory_links(advs)
-						changed = [true, true, true, true]
+						changed = [true, true, true, true, true]
 					} else if result.error != '' && !loaded[0] {
 						advs = [['error:', result.error]]
 						changed[0] = true
@@ -941,13 +945,18 @@ fn tui(initial_api Repository, initial_label string) {
 					if !result.more { loaded[2], loaded[3] = true, true }
 				}
 				.git_status { git_status = result.text }
+				.reports {
+					reports_dir = result.text
+					if result.rows != reports { reports, changed[4] = result.rows, true }
+					loaded[4] = true
+				}
 			}
 		}
 		filters := api.tui_states(view)
 		w, h := terminal_size()
 		width := line_width(w)
 		layout := tui_layout(h, 3, 3)
-		entries_by_view := [advs, cms, items, prs]
+		entries_by_view := [advs, cms, items, prs, reports]
 		for v, entries in entries_by_view {
 			if changed[v] {
 				lists[v].rebuild(entries, advs, links, v)
@@ -964,7 +973,7 @@ fn tui(initial_api Repository, initial_label string) {
 		top[view] = list_top(top[view], sel[view], n, page)
 		selected := if n > 0 { visible[view][sel[view]] } else { -1 }
 		active_entries := entries_by_view[view]
-		input := if view > 0 && selected >= 0 && active_entries[selected].len >= 3 {
+		input := if view in [1, 2, 3] && selected >= 0 && active_entries[selected].len >= 3 {
 			active_entries[selected][0]
 		} else { '' }
 		ai := if selected >= 0 { lists[view].links[selected] } else { -1 }
@@ -978,21 +987,20 @@ fn tui(initial_api Repository, initial_label string) {
 		}
 		records_title := if api.provider == 'gitlab' { 'disclosures' } else { 'advisories' }
 		prs_title := if api.provider == 'gitlab' { 'MRs' } else { 'PRs' }
-		label_hint := if label == '' { 'all labels' } else { 'label: ${label}' }
-		issue_hint := if lists[2].state == 'all' { label_hint } else { '${lists[2].state}; ${label_hint}' }
-		pr_hint := if lists[3].state == 'all' { label_hint } else { '${lists[3].state}; ${label_hint}' }
-		grep_hint := if grep == '' { 'all' } else { 'grep: ${grep}' }
-		mut tabs := ['${records_title} ${visible[0].len} (${lists[0].state})', 'commits ${visible[1].len} (${grep_hint})',
-			'issues ${visible[2].len} (${issue_hint})', '${prs_title} ${visible[3].len} (${pr_hint})']
+		mut tabs := ['${records_title} ${visible[0].len} (${lists[0].state})', 'commits ${visible[1].len}',
+			'issues ${visible[2].len} (${lists[2].state})', '${prs_title} ${visible[3].len} (${lists[3].state})',
+			'Reports ${visible[4].len} (${lists[4].state})']
 		repo_pending := loader.pending[int(TuiLoadKind.repository)]
 		for v in 0 .. tabs.len {
-			if !loaded[v] { tabs[v] += if v != 1 && api.repo == '' && !repo_pending { ' unavailable' } else { ' loading...' } }
+			if !loaded[v] { tabs[v] += if v !in [1, 4] && api.repo == '' && !repo_pending { ' unavailable' } else { ' loading...' } }
 		}
 		repo_name := if api.repo != '' { api.repo } else if repo_pending { 'resolving repository...' } else { 'repository unavailable' }
 		header := 'gsadv ${api.provider}:${api.host}/${repo_name} | local git: ${git_status}'
 		tab_line := tui_tabs(tabs, view, width)
 		columns := if view == 0 {
 			advisory_columns(w)
+		} else if view == 4 {
+			report_columns(w)
 		} else if w < 40 {
 			if view == 1 { 'SUBJECT' } else { 'NUMBER TITLE' }
 		} else if w < 80 {
@@ -1008,18 +1016,20 @@ fn tui(initial_api Repository, initial_label string) {
 			body << lists[view].line(index, active_entries, advs, view, w, i == sel[view])
 		}
 		if n == 0 {
-			body << term.dim(if !loaded[view] && view != 1 && api.repo == '' && !repo_pending {
+			body << term.dim(if !loaded[view] && view !in [1, 4] && api.repo == '' && !repo_pending {
 				'Cannot find repository. Use -r owner/repo or GSADV_REPO; g retries.'
 			} else if !loaded[view] {
 				'Loading... You can switch tabs or quit while requests run.'
 			} else if queries[view] != '' {
 				'No matches. Press / to change or clear the text filter.'
+			} else if view == 4 {
+				'No REPORT.md files under ${reports_dir}. Press , to change antfind/attic or g to reload.'
 			} else if view == 0 {
 				'No entries. Press f/F to change the filter or g to reload.'
 			} else if view == 1 && grep != '' {
-				'No commits match ${grep}. Press l to change the commit filter (empty shows all) or n to enter a commit/URL.'
+				'No commits match ${grep}. Press , to change the grep setting (empty shows all) or n to enter a commit/URL.'
 			} else if view >= 2 {
-				'No entries. Press l to change the label filter, f/F for state or g to reload.'
+				'No entries. Press , to change the label setting, f/F for state or g to reload.'
 			} else {
 				'No entries. Press g to reload or n to enter a commit/URL.'
 			})
@@ -1029,6 +1039,9 @@ fn tui(initial_api Repository, initial_label string) {
 			'Updating ${pending_action}... You can keep browsing; other changes and quitting wait for completion.'
 		} else if status != '' {
 			status
+		} else if view == 4 && selected >= 0 && reports[selected].len >= 9 {
+			report := reports[selected]
+			'${report[3]} | ${report[1]} | ${report[6]} | ${report[5]} | ${report[0]}'
 		} else if id != '' {
 			cve := match advs[ai][2] {
 				'requested*' { 'CVE request recorded locally; g reload, s status' }
@@ -1047,7 +1060,7 @@ fn tui(initial_api Repository, initial_label string) {
 		credit_hint := if api.provider == 'github' { ['C credits'] } else { []string{} }
 		screen.draw(list_frame(layout, headers, body, [filter_hint,
 			if reason != '' { invalid_note } else { key_hints(['m actions', 'N manual draft', 'i invalid', 'I unmark', 'b similar bugs', ...credit_hint, 's status', ...actions, 'g reload', 'A agent'], width) },
-			key_hints(['? help', 'q quit', 'tab/shift-tab views', '/ text', if view == 1 { 'l grep' } else { 'l label' }, 'f/F state', 'j/k/J/K move',
+			key_hints(['? help', 'q quit', 'h/l views', '/ text', ', settings', 'f/F state', 'j/k/J/K move',
 			'enter view', 'e edit', 'r review', 'M comment', 'n new'], width)]), w, h)
 		mut k := ''
 		for {
@@ -1081,6 +1094,23 @@ fn tui(initial_api Repository, initial_label string) {
 		if pending_action != '' && k in ['q', '\x03', 'a', 'c', 'd', 'p', 'x', 'e', 'r', 'n', 'N', 'C', 'M', 'b', '\n', '\r'] {
 			continue
 		}
+		if view == 4 && k in ['\n', '\r', 'e'] {
+			if selected < 0 || reports[selected].len < 9 {
+				status = 'no report selected'
+				continue
+			}
+			path := reports[selected][0]
+			screen.width = 0
+			cooked()
+			if k == 'e' {
+				sh('${os.getenv_opt('EDITOR') or { 'vi' }} "\$1"', path)
+			} else {
+				view_text(os.read_file(path) or { 'error: ${err}' }) or { status = 'error: ${err}' }
+			}
+			raw()
+			loader.request(api, label, .reports, true)
+			continue
+		}
 		match k {
 			'q', '\x03' {
 				break
@@ -1089,9 +1119,9 @@ fn tui(initial_api Repository, initial_label string) {
 			'k', '\x1b[A' { sel[view]-- }
 			'J', '\x1b[6~' { sel[view] += 10 }
 			'K', '\x1b[5~' { sel[view] -= 10 }
-			'\t', '\x1b[Z' {
+			'\t', '\x1b[Z', 'l', 'h', '\x1b[C', '\x1b[D' {
 				// Jump to a linked entry in the destination view when there is one.
-				step := if k == '\t' { 1 } else { tabs.len - 1 }
+				step := if k in ['\t', 'l', '\x1b[C'] { 1 } else { tabs.len - 1 }
 				next := (view + step) % tabs.len
 				if next == 0 && ai in advisory_matches {
 					if ai !in visible[0] {
@@ -1100,7 +1130,7 @@ fn tui(initial_api Repository, initial_label string) {
 					} else {
 						sel[0] = visible[0].index(ai)
 					}
-				} else if next != 0 && ai >= 0 {
+				} else if next in [1, 2, 3] && ai >= 0 {
 					entries := entries_by_view[next]
 					for c, index in visible[next] {
 						entry := entries[index]
@@ -1125,25 +1155,23 @@ fn tui(initial_api Repository, initial_label string) {
 					sel[view], top[view] = 0, 0
 				}
 			}
-			'l' {
+			',' {
 				screen.width = 0
-				if view == 1 {
-					text := tui_input('Commit filter (git log -E --grep). Enter applies; empty shows all commits; Esc cancels.',
-						'Grep: ', grep, false) or { continue }
-					next_grep := text.trim_space()
-					if next_grep == grep { continue }
-					grep = next_grep
+				mut live := {
+					'grep':  grep
+					'label': label
+				}
+				updated := settings_tui(mut live)
+				if 'grep' in updated && live['grep'] != grep {
+					grep = live['grep']
 					os.setenv('GSADV_GREP', grep, true)
 					cms, loaded[1], changed[1] = [][]string{}, false, true
 					sel[1], top[1] = 0, 0
 					loader.request(api, label, .commits, true)
-					continue
 				}
-				if text := tui_input('Label filter for issues and PRs/MRs. Enter applies; empty shows all labels; Esc cancels.',
-					'Label: ', label, false) {
-					next_label := text.trim_space()
-					if next_label == label { continue }
-					label = next_label
+				if 'label' in updated && live['label'] != label {
+					label = live['label']
+					os.setenv('GSADV_LABEL', label, true)
 					// Old rows belong to the previous label, including while reloading.
 					items, prs = [][]string{}, [][]string{}
 					for v in [2, 3] {
@@ -1151,6 +1179,11 @@ fn tui(initial_api Repository, initial_label string) {
 						sel[v], top[v] = 0, 0
 					}
 					if api.repo != '' { loader.request(api, label, .issues, true) }
+				}
+				if 'antfind' in updated || 'attic' in updated {
+					reports, loaded[4], changed[4] = [][]string{}, false, true
+					sel[4], top[4] = 0, 0
+					loader.request(api, label, .reports, true)
 				}
 			}
 			'A' {
@@ -1162,10 +1195,11 @@ fn tui(initial_api Repository, initial_label string) {
 			'g' {
 				if api.repo != '' {
 					invalid = api.invalid_marks() or { status = 'local invalid tags: ${err}'; invalid.clone() }
-					changed = [true, true, true, true]
+					changed = [true, true, true, true, true]
 				}
 				loader.request(api, label, .commits, false)
 				loader.request(api, label, .git_status, false)
+				loader.request(api, label, .reports, false)
 				if api.repo == '' {
 					loader.request(api, label, .repository, false)
 				} else {
@@ -1193,7 +1227,7 @@ fn tui(initial_api Repository, initial_label string) {
 					invalid = api.invalid_marks() or { status = 'error: ${err}'; continue }
 					status = 'Removed local invalid tag from ${target}'
 				}
-				changed = [true, true, true, true]
+				changed = [true, true, true, true, true]
 			}
 			'\n', '\r', 'e', 'r', 'b', 'n', 'N', 's', 'C', 'M', '?' {
 				if api.repo == '' && k != '?' && !(view == 1 && k in ['\n', '\r']) {

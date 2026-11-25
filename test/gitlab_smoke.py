@@ -412,27 +412,27 @@ def tui_smoke(binary, root, env):
         until('[commits')
         os.write(master, b'\t')
         issues = until('[issues ')
-        assert 'label: cve' in issues and 'Reviewed report' in issues and 'Fix parser' not in issues
+        assert 'Reviewed report' in issues and 'Fix parser' not in issues
         os.write(master, b'f')
-        until('(opened; label: cve)')
+        until('(opened)]')
         os.write(master, b'\t')
         mrs = until('[MRs ')
         assert 'Fix parser' in mrs and 'Reviewed report' not in mrs
         os.write(master, b'f')
-        until('[MRs 0 (opened; label: cve)]')
+        until('[MRs 0 (opened)]')
         os.write(master, b'f')
-        until('[MRs 0 (closed; label: cve)]')
+        until('[MRs 0 (closed)]')
         os.write(master, b'f')
-        until('[MRs 1 (merged; label: cve)]')
+        until('[MRs 1 (merged)]')
         os.write(master, b'\x1b[Z')
         issues = until('[issues ')
-        assert '(opened; label: cve)' in issues and 'Reviewed report' in issues
+        assert '(opened)]' in issues and 'Reviewed report' in issues
         os.write(master, b'F')
-        until('(label: cve)]')
+        until('(all)]')
         os.write(master, b'\t')
-        until('[MRs 1 (merged; label: cve)]')
+        until('[MRs 1 (merged)]')
         os.write(master, b'f')
-        until('[MRs 1 (label: cve)]')
+        until('[MRs 1 (all)]')
         os.write(master, b'r')
         until('Review source with AI.')
         os.write(master, b'\x1b')
@@ -447,36 +447,62 @@ def tui_smoke(binary, root, env):
         os.write(master, b'Fix parser\r')
         until('/Fix parser')
         os.write(master, b'\t')
+        until('[Reports ')
+        os.write(master, b'\t')
         disclosures = until('[disclosures ')
         assert '/released' in disclosures and '/Fix parser' not in disclosures
+        os.write(master, b'\x1b[Z')
+        until('[Reports ')
         os.write(master, b'\x1b[Z')
         mrs = until('[MRs ')
         assert '/Fix parser' in mrs
         os.write(master, b'\x1b[Z')
         issues = until('[issues ')
         assert 'Reviewed report' in issues and 'Fix parser' not in issues
+        # h/l and the arrows are aliases for shift-tab/tab.
         os.write(master, b'l')
-        until('Label: cve')
+        until('[MRs ')
+        os.write(master, b'\x1b[D')
+        until('[issues ')
+        os.write(master, b'\x1b[C')
+        until('[MRs ')
+        os.write(master, b'h')
+        until('[issues ')
+        os.write(master, b',')
+        until('label=cve')
+        os.write(master, b'j\r')
+        until('Set label in')
         os.write(master, b'\x15custom label\r')
-        empty = until('No entries. Press l')
-        assert 'label: custom label' in empty
+        until('Saved label.')
+        assert (root / '.gsadv.ini').read_text() == 'label=custom label\n'
+        os.write(master, b'q')
+        until('No entries. Press , to change the label setting')
         calls = [json.loads(line) for line in (root / 'calls').read_text().splitlines()]
         assert all('labels=custom+label' in c['path'] for c in calls[-2:])
         os.write(master, b'\t')
         until('[MRs 0')
-        os.write(master, b'l')
-        until('Label: custom label')
+        os.write(master, b',')
+        until('label=custom label')
+        os.write(master, b'j\r')
+        until('Set label in')
         os.write(master, b'\x15\r')
+        until('Saved label.')
+        os.write(master, b'q')
         mrs = until('[MRs 1')
-        assert 'all labels' in mrs and '/Fix parser' in mrs
+        assert '/Fix parser' in mrs
         calls = [json.loads(line) for line in (root / 'calls').read_text().splitlines()]
         assert all('labels=' not in c['path'] for c in calls[-2:])
         count = len(calls)
-        os.write(master, b'l')
-        until('Label: ')
+        os.write(master, b',')
+        until('Settings |')
+        os.write(master, b'j\r')
+        until('Set label in')
         os.write(master, b'cancelled\x1b')
+        until('Settings |')
+        os.write(master, b'q')
         mrs = until('[MRs ')
-        assert 'all labels' in mrs and '/Fix parser' in mrs
+        assert '/Fix parser' in mrs
+        assert (root / '.gsadv.ini').read_text() == 'label=\n'
         assert len((root / 'calls').read_text().splitlines()) == count
         os.write(master, b'\x1b[Z')
         issues = until('[issues ')

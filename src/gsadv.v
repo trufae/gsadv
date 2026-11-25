@@ -4,10 +4,12 @@ import os
 
 const version = $embed_file('../VERSION').to_string().trim_space()
 
-// Prefer explicit environment settings, including empty values, then Git configuration.
+// Prefer explicit environment settings, including empty values, then .gsadv.ini, then Git configuration.
 fn setting(name string) ?string {
 	if value := os.getenv_opt('GSADV_${name}') { return value }
 	if value := os.getenv_opt('GHADV_${name}') { return value }
+	values := project_ini()
+	if name.to_lower() in values { return values[name.to_lower()] }
 	r := os.exec(['git', 'config', '--get', 'gsadv.${name.to_lower().replace('_', '-')}'])
 	if r.exit_code != 0 { return none }
 	return r.output.trim_right('\r\n')
@@ -15,7 +17,7 @@ fn setting(name string) ?string {
 
 const help = 'Usage: gsadv [-r namespace/repo|url] [--provider github|gitlab] [--host hostname] [--remote name] [--label label] [--grep regex] [command] [args]
   --version, -v, version   print the tool version
-  tui [label]              advisory, commit, issue and PR/MR tabs (default)
+  tui [label]              advisory, commit, issue, PR/MR and report tabs (default)
   ls [state]               GitHub advisories or GitLab disclosure issues (opened/closed)
   log                     list matching commits and their advisories
   issues [label]           list issues/PRs (default label: GSADV_LABEL or cve)
@@ -49,13 +51,16 @@ Environment:
   GSADV_LABEL  issues/PRs label (default: cve; empty: all labels; includes open and closed items)
   --label and --grep override these settings; use an empty value to disable a filter.
   Per-repository defaults: git config --local gsadv.label security; git config --local gsadv.grep fix
+  Per-project settings: .gsadv.ini at the checkout root (key=value; press , in the TUI)
+  GSADV_ANTFIND  directory scanned for REPORT.md files in the Reports tab (default: ANTFIND)
+  GSADV_ATTIC    directory name skipped below it (default: Attic)
   GSADV_AI     agent command, prompt is piped to stdin (default: claude -p)
                progress goes to stderr; replies are saved for recovery
                e.g. "codex exec -", \'pmai --progress "\$(cat)"\', \'opencode run "\$(cat)"\''
 
 fn issue_label(args []string) string {
 	if args.len > 1 { return args[1] }
-	return setting('LABEL') or { 'cve' }
+	return project_setting('label')
 }
 
 fn main() {

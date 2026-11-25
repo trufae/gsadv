@@ -8,6 +8,7 @@ enum TuiLoadKind {
 	commits
 	issues
 	git_status
+	reports
 }
 
 struct TuiLoad {
@@ -37,15 +38,19 @@ fn tui_load(api Repository, label string, kind TuiLoadKind, page int, results ch
 		.commits { rows = commits() or { failure = err.msg(); [][]string{} } }
 		.issues { rows, more = api.issue_page(label, page) or { failure = err.msg(); [][]string{}, false } }
 		.git_status { text = local_git_status() }
+		.reports {
+			text = reports_base()
+			rows = find_reports(text, project_setting('attic'))
+		}
 	}
 	results <- TuiLoad{kind: kind, rows: rows, text: text, error: failure, repository: repository, more: more}
 }
 
 struct TuiLoader {
-	results chan TuiLoad = chan TuiLoad{cap: 5}
+	results chan TuiLoad = chan TuiLoad{cap: 6}
 mut:
-	pending []bool = []bool{len: 5}
-	again []bool = []bool{len: 5}
+	pending []bool = []bool{len: 6}
+	again []bool = []bool{len: 6}
 	issue_page int = 1
 	issue_rows [][]string
 }
@@ -132,6 +137,7 @@ struct TuiRow {
 fn (api Repository) tui_states(view int) []string {
 	if view == 0 { return api.states() }
 	if view == 1 { return ['all'] }
+	if view == 4 { return report_states }
 	if api.provider == 'github' { return ['all', 'open', 'closed'] }
 	return if view == 3 { ['all', 'opened', 'closed', 'merged'] } else { ['all', 'opened', 'closed'] }
 }
@@ -154,12 +160,12 @@ mut:
 }
 
 fn (mut list TuiList) rebuild(entries [][]string, advs [][]string, links AdvisoryLinks, view int) {
-	list.state_column = if view >= 2 { 3 } else { 1 }
+	list.state_column = if view in [2, 3] { 3 } else { 1 }
 	list.links = []int{len: entries.len, init: -1}
 	list.search = []string{len: entries.len}
 	list.invalid = []string{len: entries.len}
 	for i, entry in entries {
-		linked := if view == 0 { i } else if entry.len > 0 { links.find(entry[0]) } else { -1 }
+		linked := if view == 0 { i } else if view != 4 && entry.len > 0 { links.find(entry[0]) } else { -1 }
 		list.links[i] = linked
 		list.search[i] = (entry.join(' ') + if view != 0 && linked >= 0 { ' ' + advs[linked][0] } else { '' }).to_lower()
 	}
@@ -204,6 +210,7 @@ fn (mut list TuiList) line(index int, entries [][]string, advs [][]string, view 
 		line := match view {
 			0 { row(entries[index], width) }
 			1 { commit_row(entries[index], a, width) }
+			4 { report_row(entries[index], width) }
 			else { issue_row(entries[index], a, width) }
 		}
 		normal := marked_row(line, list.invalid[index], width)
