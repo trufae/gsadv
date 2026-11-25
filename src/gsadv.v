@@ -23,6 +23,8 @@ const help = 'Usage: gsadv [-r namespace/repo|url] [--provider github|gitlab] [-
   issues [label]           list issues/PRs (default label: GSADV_LABEL or cve)
   new                     write a draft by hand in \$EDITOR from a template
   new <commit|url> [context] analyze a commit, issue or PR/MR with AI and create a draft
+  import <commit|ADVISORY.md|REPORT.md> edit the ADVISORY.md of a finding, found by
+                          the ANT- ID in a fix commit message, and create a draft
   show <id>               print advisory
   status <id>             show lifecycle, CVE and private report details
   credits <id>            manage credited people and roles in the TUI
@@ -173,6 +175,12 @@ fn main() {
 		}
 		'new' {
 			cmd_new(api, id, ctx) or {
+				eprintln('error: ${err}')
+				exit(1)
+			}
+		}
+		'import' {
+			cmd_import(api, id) or {
 				eprintln('error: ${err}')
 				exit(1)
 			}

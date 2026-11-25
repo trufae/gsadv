@@ -237,7 +237,9 @@ m: mark the selected item for everyone using gsadv on this repository (other ter
    - ignore (dim, sort last), ! invalid (with a reason); u in the panel removes it.
    The mark, who set it, when and its note appear below the list.
    Marks are manual triage decisions, separate from advisory and release state.
-enter: view advisory/commit/issue/PR/report; e: edit advisory or report; r: AI review; n: AI draft
+enter: view advisory/commit/issue/PR/report; e: edit advisory or report; r: AI review
+n: new advisory: a AI draft, m manual draft, i import the ADVISORY.md of the finding
+   referenced by the commit message (ANT-...) or of the selected report
 N: write a draft manually from a template in \$EDITOR
 M: edit and post a discussion comment on the selected issue/PR/MR
 b: find similar bugs using the selected advisory or source as a template
@@ -255,7 +257,8 @@ Reports: REPORT.md files under antfind, skipping attic; enter views, e edits, f/
    a then F reviews and applies the suggested patch without building or running it, then drafts
    the advisory from the files already in the report directory.
    a false positive is marked invalid. w views agent output (WIP.txt), o views the result (RESULT.md),
-   and d views the advisory draft (ADVISORY.md); n on the fix commit drafts the advisory from it.
+   and d views the advisory draft (ADVISORY.md); n on the fix commit or report imports it or
+   drafts the advisory from it with AI.
    STATE: 🤖 agent running, 🛑 stopped, 👍 confirmed, 📝 advisory draft, ❌ invalid or false positive,
    🔧 already fixed, ❓ inconclusive, ✅ finished without a verdict.
    b saves similar bugs to SIMILAR.md (s views it). t moves the report to the attic.
@@ -491,6 +494,10 @@ fn run(k string, api Repository, id string, input string) ! {
 				if !similar_tui(api, input)! { return }
 				action_input('Press Enter to return (Ctrl+C/Esc also returns): ') or {}
 			}
+		}
+		'import' {
+			tui_workflow(api, 'import', input)!
+			action_input('Press Enter to return (Ctrl+C/Esc also returns): ') or {}
 		}
 		'N' {
 			tui_workflow(api, 'new')!
@@ -1421,6 +1428,26 @@ fn tui(initial_api Repository, initial_label string) {
 				if k == '?' {
 					tui_dialog(api.help_text() + '\n\nagent: ${setting('AI') or { agents[0] }}')
 					continue
+				}
+				if k == 'n' {
+					draft := if view == 1 && input != '' {
+						commit_advisory(input)
+					} else if report.len > 0 && os.is_file(advisory_path(report[0])) {
+						advisory_path(report[0])
+					} else {
+						''
+					}
+					from := if input == '' { 'a commit, issue or PR/MR' } else { input }
+					choice := tui_dialog('New advisory\n\na generate a new AI advisory from ${from}\nm manual draft from the template\n' +
+						if draft == '' { '' } else { 'i import ${draft}\n' } + '\nChoose a key; Enter/Esc cancels.')
+					if choice == 'm' {
+						k = 'N'
+					} else if choice == 'i' && draft != '' {
+						k = 'import'
+						show_input = draft
+					} else if choice != 'a' {
+						continue
+					}
 				}
 				if k == 'C' && api.provider == 'gitlab' {
 					tui_dialog('GitLab credits are text in the disclosure description. Use e to edit attribution.')

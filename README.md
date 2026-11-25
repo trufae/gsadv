@@ -14,7 +14,9 @@ Run `gsadv` inside a repository to open the terminal UI.
 Press `N` to write a draft by hand in `$EDITOR`, starting from an advisory template.
 Fill in the fields and sections or paste a complete advisory; leaving the template
 unchanged or emptying it cancels. `gsadv new` opens the same template from the CLI.
-Lowercase `n` and `gsadv new <commit|url>` draft with AI.
+Lowercase `n` opens a menu: `a` generates a new advisory with AI from the selected
+commit, issue or PR/MR (`gsadv new <commit|url>`), `m` writes a manual draft like `N`,
+and `i` imports an `ADVISORY.md` when one is available (see the Reports tab below).
 Press `a` for the actions that apply to the selected item in the current tab
 (similar bugs, credits, CVE and state changes, comments, ...); each still has its
 direct key, listed in `?` help.
@@ -85,6 +87,9 @@ in the commits tab or `gsadv new <commit>`), gsadv takes the finding ID from the
 commit message (`* OSS-SCAN - ANT-...`), finds the finding under `antfind`, attic
 included, and gives the agent its `ADVISORY.md` to trust as the starting point, or
 its `REPORT.md` as evidence when there is no draft.
+To skip the AI, press `n` then `i` on the fix commit (or on the report): gsadv opens
+that `ADVISORY.md` in `$EDITOR` and creates the draft when you save it. From the CLI,
+`gsadv import <commit|ADVISORY.md|REPORT.md>` does the same.
 `b`, or `gsadv similar <REPORT.md> [context]`, searches for similar bugs using the
 report as a template (the agent first confirms the report's bug pattern, since it
 may be a false positive) and saves the findings as `SIMILAR.md` next to the report;

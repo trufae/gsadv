@@ -309,6 +309,17 @@ fn find_finding(base string, id string) string {
 	return ''
 }
 
+// The ADVISORY.md of the finding a fix commit message references, or '' when there is none.
+fn commit_advisory(commit string) string {
+	r := os.exec(['git', 'log', '-1', '--format=%B', '--no-show-signature', commit, '--'])
+	if r.exit_code != 0 { return '' }
+	id := ant_id(r.output)
+	if id == '' { return '' }
+	dir := find_finding(reports_base(), id)
+	path := os.join_path(dir, 'ADVISORY.md')
+	return if dir != '' && os.is_file(path) { path } else { '' }
+}
+
 // Prompt text for a source that references a finding: its ADVISORY.md is trusted.
 fn finding_context(evidence string) string {
 	id := ant_id(evidence)

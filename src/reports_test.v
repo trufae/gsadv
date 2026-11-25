@@ -154,6 +154,32 @@ fn test_finding_advisory_context() ! {
 	assert prompt.contains('summary: Verified overflow') && !prompt.contains('{{finding}}')
 }
 
+fn test_commit_advisory() ! {
+	base := os.join_path(os.temp_dir(), 'gsadv-commit-advisory-${os.getpid()}')
+	repo := os.join_path(base, 'repo')
+	dir := os.join_path(base, 'antfind', 'Attic', 'ANT-2026-ABCDEFGH')
+	os.mkdir_all(repo)!
+	os.mkdir_all(dir)!
+	old := os.getwd()
+	os.setenv('GSADV_ANTFIND', os.join_path(base, 'antfind'), true)
+	defer {
+		os.chdir(old) or {}
+		os.unsetenv('GSADV_ANTFIND')
+		os.rmdir_all(base) or {}
+	}
+	os.chdir(repo)!
+	git := ['git', '-c', 'user.name=t', '-c', 'user.email=t@t', '-c', 'commit.gpgsign=false']
+	os.exec(['git', 'init', '-q'])
+	os.exec([...git, 'commit', '-q', '--allow-empty', '-m', 'Fix it ##crash\n\n* OSS-SCAN - ANT-2026-ABCDEFGH'])
+	os.exec([...git, 'commit', '-q', '--allow-empty', '-m', 'Unrelated'])
+	os.write_file(os.join_path(dir, 'REPORT.md'), 'report')!
+	assert commit_advisory('HEAD~1') == ''
+	os.write_file(os.join_path(dir, 'ADVISORY.md'), 'summary: Overflow\n---\nDetails\n')!
+	assert commit_advisory('HEAD~1') == os.join_path(dir, 'ADVISORY.md')
+	assert commit_advisory('HEAD') == ''
+	assert commit_advisory('nonexistent') == ''
+}
+
 fn test_fix_agent_reaches_report_directory() ! {
 	dir := os.join_path(os.temp_dir(), 'gsadv-report-dir-${os.getpid()}')
 	checkout := os.join_path(dir, 'checkout')

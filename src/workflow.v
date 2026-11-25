@@ -954,6 +954,31 @@ fn cmd_new(api Repository, input string, ctx string) ! {
 	resume_edit(start_edit(api, '', 'new', '', prompt)!, true)!
 }
 
+// Create a draft from a finding's ADVISORY.md: given directly, next to a REPORT.md, in a
+// finding directory, or referenced by a fix commit message (ANT-...). No AI is involved.
+fn cmd_import(api Repository, input string) ! {
+	path := if os.is_dir(input) {
+		os.join_path(input, 'ADVISORY.md')
+	} else if os.file_name(input) == 'REPORT.md' {
+		advisory_path(input)
+	} else if os.is_file(input) {
+		input
+	} else {
+		commit_advisory(input)
+	}
+	if path == '' || !os.is_file(path) {
+		return error('no ADVISORY.md for ${input}; a fix commit must reference a finding (ANT-...) below ${reports_base()}')
+	}
+	draft := '# Imported from ${path}\n# Review, then save and close to create a draft; empty the file to cancel.\n' +
+		os.read_file(path)!
+	dir := start_edit(api, '', 'new', '', '')!
+	os.write_file(os.join_path(dir, 'notes.txt'), '')!
+	for name in ['proposed.md', 'edit.md'] {
+		os.write_file(os.join_path(dir, name), draft)!
+	}
+	resume_edit(dir, false)!
+}
+
 fn cmd_review(api Repository, id string, ctx string) ! {
 	orig := api.advisory(id)!
 	prompt := render(prompt_review, {
