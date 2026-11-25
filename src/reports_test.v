@@ -119,7 +119,7 @@ fn test_report_wip_states() ! {
 }
 
 fn test_report_state_icons_fit_the_column() {
-	assert report_state_cell('working confirmed advisory', true) == '🤖 👍 📝 ❌'
+	assert report_state_cell('working confirmed advisory similar', true) == '🤖 👍 📝 🔍 ❌'
 	assert report_state_cell('false-pos', true).trim_space() == '❌'
 	assert report_state_cell('stopped fixed-old', false).trim_space() == '🛑 🔧'
 	assert report_state_cell('unclear', false).trim_space() == '❓'

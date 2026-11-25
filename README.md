@@ -80,6 +80,7 @@ refreshes each second and shows every applicable icon.
 - 👍 Confirmed, ❌ marked invalid or false positive, 🔧 already fixed,
   ❓ inconclusive, or ✅ finished without a verdict. Press `o` to read `RESULT.md`.
 - 📝 Advisory draft exists. Press `d` to read `ADVISORY.md`.
+- 🔍 Similar bugs were searched. Press `s` to read `SIMILAR.md`.
 
 Both fix prompts point the agent at the report's directory and list its supporting
 files. After committing a confirmed fix, the agent writes `ADVISORY.md` next to

@@ -11,7 +11,7 @@ import time
 //   Title
 //   Location: file.c:123  in func()
 const report_states = ['all', 'critical', 'high', 'medium', 'low', 'bug']
-const report_state_width = 11
+const report_state_width = 14
 
 const report_cwe_types = {
 	'CWE-416':  'UAF'
@@ -371,6 +371,7 @@ fn report_state_cell(labels string, invalid bool) string {
 		'stopped' { '🛑' }
 		'confirmed' { '👍' }
 		'advisory' { '📝' }
+		'similar' { '🔍' }
 		'false-pos' { '❌' }
 		'fixed-old' { '🔧' }
 		'unclear' { '❓' }
@@ -416,7 +417,8 @@ fn report_columns(w int) string {
 
 fn report_row(r []string, w int, invalid bool) string {
 	if r.len < 10 { return clip_line(r.join(' '), line_width(w)) }
-	state := report_state_cell(r[9], invalid)
+	labels := if r.len > 10 { '${r[9]} ${r[10]}' } else { r[9] }
+	state := report_state_cell(labels, invalid)
 	icon := if r[1] == 'bug' { '⚫' } else { severity_icon(r[1]) }
 	line := if w < 60 { r[4] } else if w < 90 {
 		'${icon} ${r[2]:-14} ${state} ${r[4]}'
