@@ -156,7 +156,7 @@ fn (api GitHub) issues_path(label string) string {
 	return 'repos/${api.repo}/issues?state=all&per_page=100${filter}'
 }
 
-const jq_issues = '.[] | [(.pull_request.html_url // .html_url), .number, (if .pull_request then "PR" else "issue" end), .state, .title] | @tsv'
+const jq_issues = '.[] | [(.pull_request.html_url // .html_url), .number, (if .pull_request then "PR" else "issue" end), .state, .title, .comments] | @tsv'
 
 fn (api GitHub) issues(label string) ![][]string {
 	out := api.request('--paginate', api.issues_path(label), '--jq', jq_issues)!

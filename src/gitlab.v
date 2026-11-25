@@ -43,6 +43,7 @@ struct GitLabIssue {
 	merge_commit_sha string
 	source_branch string
 	target_branch string
+	user_notes_count int
 }
 
 struct GitLabNote {
@@ -226,7 +227,7 @@ fn (api GitLab) issues(label string) ![][]string {
 	for kind in ['issues', 'merge_requests'] {
 		for item in api.list[GitLabIssue]('${api.project()}/${kind}?scope=all&state=all&per_page=100${filter}')! {
 			rows << [item.web_url, item.iid.str(), if kind == 'issues' { 'issue' } else { 'MR' },
-				item.state, item.title]
+				item.state, item.title, item.user_notes_count.str()]
 		}
 	}
 	return rows
@@ -244,7 +245,7 @@ fn (api GitLab) issue_page(label string, page int) !([][]string, bool) {
 		for line in lines {
 			item := json2.decode[GitLabIssue](line)!
 			rows << [item.web_url, item.iid.str(), if kind == 'issues' { 'issue' } else { 'MR' },
-				item.state, item.title]
+				item.state, item.title, item.user_notes_count.str()]
 		}
 	}
 	return rows, more

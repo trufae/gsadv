@@ -350,9 +350,10 @@ fn issue_row(item []string, a []string, w int) string {
 		return clip_line(item.join(' '), line_width(w))
 	}
 	mark := if a.len < 5 { term.dim('${'-':-20}') } else { color(a[1], '${a[0]:-20}') }
+	comments := if item.len > 5 { item[5] } else { '-' }
 	line := if w < 40 { '#${item[1]} ${item[4]}' } else if w < 80 {
-		'#${item[1]} ${item[2]} ${item[3]} ${item[4]}'
-	} else { '${'#' + item[1]:-8} ${item[2]:-5} ${item[3]:-7} ${mark} ${item[4]}' }
+		'#${item[1]} ${item[2]} ${item[3]} ${comments} ${item[4]}'
+	} else { '${'#' + item[1]:-8} ${item[2]:-5} ${item[3]:-7} ${comments:8} ${mark} ${item[4]}' }
 	return clip_line(line, line_width(w))
 }
 
@@ -1072,11 +1073,11 @@ fn tui(initial_api Repository, initial_label string) {
 		} else if w < 40 {
 			if view == 1 { 'SUBJECT' } else { 'NUMBER TITLE' }
 		} else if w < 80 {
-			if view == 1 { '   COMMIT     SUBJECT' } else { 'NUMBER TYPE STATE TITLE' }
+			if view == 1 { '   COMMIT     SUBJECT' } else { 'NUMBER TYPE STATE COMMENTS TITLE' }
 		} else if view == 1 {
 			'   ${'COMMIT':-10} ${'DATE':-10} ${'ADVISORY':-20} SUBJECT'
 		} else {
-			'${'NUMBER':-8} ${'TYPE':-5} ${'STATE':-7} ${'ADVISORY':-20} TITLE'
+			'${'NUMBER':-8} ${'TYPE':-5} ${'STATE':-7} ${'COMMENTS':8} ${'ADVISORY':-20} TITLE'
 		}
 		mut body := []string{}
 		for i in top[view] .. int_min(n, top[view] + page) {

@@ -27,6 +27,7 @@ fn test_rows_fit_every_width() {
 	for w in 1 .. 201 {
 		for line in [row(a, w), crow(['abcdef0123456789', '2026-11-09', title], [a], w),
 			irow(['url', '123456789', 'issue', 'closed', title], [a], w),
+			irow(['url', '7', 'PR', 'open', title, '12345'], [a], w),
 			row(['error:', title], w), crow(['error:', title], [a], w),
 			irow(['error:', title], [a], w)] {
 			plain := term.strip_ansi(line)
@@ -39,6 +40,8 @@ fn test_rows_fit_every_width() {
 	}
 	assert row(a, 30).starts_with('Fix')
 	assert crow(['short', 'date', title], [a], 80).contains('short')
+	assert irow(['url', '7', 'PR', 'open', 'Fix', '3'], [][]string{}, 100).starts_with('#7       PR    open           3 ')
+	assert irow(['url', '7', 'PR', 'open', 'Fix', '3'], [][]string{}, 60) == '#7 PR open 3 Fix'
 }
 
 fn test_small_layouts_and_scroll_limits() {
