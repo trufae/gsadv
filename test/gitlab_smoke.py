@@ -221,6 +221,9 @@ def main():
         assert all('labels=other' in c['path'] for c in calls()[-2:])
         subprocess.run(['git', '-C', str(root), 'config', '--unset', 'gsadv.label'], check=True)
         for subject in ['Ordinary work', 'Fix parser', 'Tagged fix ##security']:
+            if subject.startswith('Tagged fix'):
+                (root / 'preview-fixture.txt').write_text('Local commit preview fixture\n')
+                subprocess.run(['git', '-C', str(root), 'add', 'preview-fixture.txt'], check=True)
             subprocess.run(['git', '-C', str(root), '-c', 'user.name=Fixture',
                             '-c', 'user.email=fixture@example.invalid', 'commit', '--allow-empty',
                             '-qm', subject], check=True)
@@ -399,6 +402,11 @@ def tui_smoke(binary, root, env):
     try:
         opening = until('[confidential]')
         assert 'FIXED IN' in opening and 'RELEASE' in opening and '🟢' in opening
+        os.write(master, b'-')
+        disclosure = until('Verified bounds check.')
+        assert 'Preview GL-42' in disclosure and '[disclosures ' in disclosure, disclosure
+        os.write(master, b'q')
+        until('local git:')
         os.write(master, b'/')
         until('Filter text:')
         os.write(master, b'released\r')
@@ -434,7 +442,13 @@ def tui_smoke(binary, root, env):
         os.write(master, b'I')
         until('Removed local invalid tag')
         os.write(master, b'\t')
-        until('[commits')
+        until('[commits 1]')
+        os.write(master, b'-')
+        commit = until('+Local commit preview fixture')
+        assert 'Preview ' in commit and '[commits 1]' in commit, commit
+        assert 'diff --git a/preview-fixture.txt b/preview-fixture.txt' in commit, commit
+        os.write(master, b'q')
+        until('local git:')
         os.write(master, b'\t')
         issues = until('[issues ')
         assert 'Reviewed report' in issues and 'Fix parser' not in issues
@@ -476,6 +490,32 @@ def tui_smoke(binary, root, env):
         os.write(master, b'f')
         until('[Reports 0 (critical)]')
         os.write(master, b'F')
+        until('[Reports 1 (all)]')
+        os.write(master, b'-')
+        split = until('<path> save')
+        assert '[Reports 1 (all)]' in split and 'Preview ANT-2026-QUICKFIX' in split, split
+        assert '\x1b[1;36mViewer heading' in split, split
+        os.write(master, b'\x1b[6~')
+        moved = until('<path> save')
+        pos = re.search(r'\x1b\[12;1H\x1b\[0mScroll line (\d+)', moved)
+        assert pos, moved
+        line = int(pos.group(1))
+        os.write(master, b'j')
+        until(f'\x1b[12;1H\x1b[0mScroll line {line + 1:02}')
+        os.write(master, b'k')
+        until(f'\x1b[12;1H\x1b[0mScroll line {line:02}')
+        os.write(master, b'l')
+        until(f'\x1b[12;1H\x1b[0mScroll line {line + 18:02}')
+        os.write(master, b'h')
+        until(f'\x1b[12;1H\x1b[0mScroll line {line:02}')
+        fcntl.ioctl(master, termios.TIOCSWINSZ, struct.pack('HHHH', 33, 55, 0, 0))
+        moved = until('<path> save')
+        assert f'\x1b[13;1H\x1b[0mScroll line {line:02}' in moved, moved
+        os.write(master, b':w split copy.md\r')
+        until('Saved split copy.md')
+        assert (root / 'split copy.md').read_bytes() == report.encode()
+        fcntl.ioctl(master, termios.TIOCSWINSZ, struct.pack('HHHH', 30, 140, 0, 0))
+        os.write(master, b'q')
         until('[Reports 1 (all)]')
         os.write(master, b'\r')
         rendered = until('<path> save')

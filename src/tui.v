@@ -238,6 +238,7 @@ m: mark the selected item for everyone using gsadv on this repository (other ter
    The mark, who set it, when and its note appear below the list.
    Marks are manual triage decisions, separate from advisory and release state.
 enter: view advisory/commit/issue/PR/report; e: edit advisory or report; r: AI review
+-: preview the selected item below the list; j/k scroll, h/l page, q closes the preview
 n: new advisory: a AI draft, m manual draft, i import the ADVISORY.md of the finding
    referenced by the commit message (ANT-...) or of the selected report;
    commits with one ready to import show 📝 ADVISORY.md until an advisory is linked
@@ -981,6 +982,7 @@ fn tui(initial_api Repository, initial_label string) {
 	mut queries := ['', '', '', '', '']
 	mut grep := commit_grep()
 	mut screen := TuiScreen{}
+	mut preview := TuiPreview{}
 	raw()
 	loader.request(api, label, .commits, false)
 	loader.request(api, label, .git_status, false)
@@ -1103,7 +1105,9 @@ fn tui(initial_api Repository, initial_label string) {
 		filters := api.tui_states(view)
 		w, h := terminal_size()
 		width := line_width(w)
-		layout := tui_layout(h, 3, 3)
+		split := preview.ref != ''
+		list_h := if split { int_min(int_max(1, h / 3), h - 1) } else { h }
+		layout := if list_h == 0 { TuiLayout{} } else if split { tui_layout(list_h, 2, 0) } else { tui_layout(h, 3, 3) }
 		entries_by_view := [advs, cms, items, prs, reports]
 		for v, entries in entries_by_view {
 			if changed[v] {
@@ -1118,9 +1122,20 @@ fn tui(initial_api Repository, initial_label string) {
 		page := layout.page
 		n := visible[view].len
 		sel[view] = if n == 0 { 0 } else { int_min(int_max(sel[view], 0), n - 1) }
-		top[view] = list_top(top[view], sel[view], n, page)
-		selected := if n > 0 { visible[view][sel[view]] } else { -1 }
 		active_entries := entries_by_view[view]
+		mut selected := if n > 0 { visible[view][sel[view]] } else { -1 }
+		if split && selected >= 0 && (active_entries[selected][0] or { '' }) != preview.ref {
+			// A refresh or a shared mark can move the item while its preview is open.
+			selected = -1
+			for i, index in visible[view] {
+				if (active_entries[index][0] or { '' }) == preview.ref {
+					sel[view], selected = i, index
+					break
+				}
+			}
+		}
+		list_top_row := list_top(top[view], sel[view], n, page)
+		if !split { top[view] = list_top_row }
 		input := if view in [1, 2, 3] && selected >= 0 && active_entries[selected].len >= 3 {
 			active_entries[selected][0]
 		} else { '' }
@@ -1163,9 +1178,9 @@ fn tui(initial_api Repository, initial_label string) {
 			'${'NUMBER':-8} ${'TYPE':-5} ${'STATE':-7} ${'COMMENTS':8} ${'ADVISORY':-20} TITLE'
 		}
 		mut body := []string{}
-		for i in top[view] .. int_min(n, top[view] + page) {
+		for i in list_top_row .. int_min(n, list_top_row + page) {
 			index := visible[view][i]
-			body << lists[view].line(index, active_entries, advs, view, w, i == sel[view])
+			body << lists[view].line(index, active_entries, advs, view, w, index == selected)
 		}
 		if n == 0 {
 			body << term.dim(if !loaded[view] && view !in [1, 4] && api.repo == '' && !repo_pending {
@@ -1205,26 +1220,42 @@ fn tui(initial_api Repository, initial_label string) {
 			'No advisory selected; N writes a draft manually; n drafts from a commit, issue or PR'
 		}
 		filter_hint := if queries[view] == '' { hint } else { '/${queries[view]} | ${hint}' }
-		mut headers := [term.bold(header), term.bold(tab_line), term.dim(marked_row(columns, '', w))]
+		column_line := term.dim(marked_row(columns, '', w))
+		mut headers := if split {
+			[term.bold(tab_line), column_line]
+		} else {
+			[term.bold(header), term.bold(tab_line), column_line]
+		}
 		// Keep the active view visible when a short terminal only has one header.
-		if layout.head == 1 { headers[0] = headers[1] }
+		if !split && layout.head == 1 { headers[0] = headers[1] }
 		item_hints := if view == 4 {
 			['a actions', 'm mark', 'enter view', 'e edit', 'o result', 'd advisory', 'b similar', 's similar.md', 't attic', 'g reload']
 		} else {
 			['a actions', 'm mark', 'enter view', 'e edit', 'r review', 'n new', 'N manual draft', 'g reload', 'A agent']
 		}
-		screen.draw(list_frame(layout, headers, body, [filter_hint,
+		mut frame := list_frame(layout, headers, body, [filter_hint,
 			if mark_note != '' { mark_note } else { key_hints(item_hints, width) },
-			key_hints(['? help', 'q quit', 'hjkl move', '/ text', ', settings', 'f/F state'], width)]), w, h)
+			key_hints(['? help', 'q quit', 'hjkl move', '/ text', ', settings', 'f/F state', '- preview'], width)])
+		if split {
+			preview.poll()
+			if h - frame.len > 2 { frame << term.inverse(' Preview ${preview.title} ') }
+			frame << preview.doc.frame(w, h - frame.len)
+		}
+		screen.draw(frame, w, h)
+		if split { preview.doc.cursor(w, h) }
 		mut k := ''
 		for {
-			if loader.results.len > 0 || action_results.len > 0 { break }
+			if loader.results.len > 0 || action_results.len > 0 || (split && preview.result.len > 0) { break }
 			k = poll_key()
 			nw, nh := terminal_size()
 			if k != '' || nw != w || nh != h || time.since(marks_checked) >= time.second { break }
 		}
-		mut show_input := input
 		if k == '' { continue }
+		if split {
+			if !preview.doc.handle(k) { preview = TuiPreview{} }
+			continue
+		}
+		mut show_input := input
 		status = ''
 		mut fix_command := ''
 		if k == 'a' {
@@ -1391,6 +1422,14 @@ fn tui(initial_api Repository, initial_label string) {
 		match k {
 			'q', '\x03' {
 				break
+			}
+			'-' {
+				ref := if report.len > 0 { report[0] } else { target }
+				if ref == '' {
+					status = 'no item selected to preview'
+					continue
+				}
+				preview = start_preview(api, view, ref, mark_name)
 			}
 			'j', '\x1b[B' { sel[view]++ }
 			'k', '\x1b[A' { sel[view]-- }

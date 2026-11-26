@@ -1,5 +1,6 @@
 module main
 
+import os
 import term
 
 enum TuiLoadKind {
@@ -126,6 +127,62 @@ fn tui_details(api Repository, id string, cve bool, detail string) {
 		w, h := terminal_size()
 		screen.draw(['Loading status for ${id}...', 'Esc/Ctrl+C/q: back'], w, h)
 		if poll_key() in ['\x1b', '\x03', 'q', '\n', '\r'] { return }
+	}
+}
+
+struct TuiPreviewResult {
+	text string
+	vf ViewFormat
+	err string
+}
+
+struct TuiPreview {
+	ref string
+	title string
+	result chan TuiPreviewResult
+mut:
+	doc DocumentView
+}
+
+fn start_preview(api Repository, view int, ref string, title string) TuiPreview {
+	result := chan TuiPreviewResult{cap: 1}
+	mut preview := TuiPreview{ref: ref, title: title, result: result}
+	preview.doc.set_text('Loading preview...', .plain, false)
+	spawn load_preview(api, view, ref, result)
+	return preview
+}
+
+fn load_preview(api Repository, view int, ref string, result chan TuiPreviewResult) {
+	text, vf := read_preview(api, view, ref) or {
+		result <- TuiPreviewResult{err: err.msg()}
+		return
+	}
+	result <- TuiPreviewResult{text: text, vf: vf}
+}
+
+fn read_preview(api Repository, view int, ref string) !(string, ViewFormat) {
+	match view {
+		0 { return api.advisory(ref)!, .advisory }
+		1 {
+			show := os.exec(['git', '--no-pager', 'show', '--no-color', ref, '--'])
+			if show.exit_code != 0 {
+				msg := show.output.trim_space()
+				return error(if msg == '' { 'Could not read commit ${ref}' } else { msg })
+			}
+			return show.output, .plain
+		}
+		4 { return os.read_file(ref)!, .markdown }
+		else { return api.source_text(api.source(ref)!, false)!, .markdown }
+	}
+}
+
+fn (mut preview TuiPreview) poll() {
+	mut result := TuiPreviewResult{}
+	if preview.result.try_pop(mut result) != .success { return }
+	if result.err != '' {
+		preview.doc.set_text('Could not load preview\n${result.err}', .plain, false)
+	} else {
+		preview.doc.set_text(result.text, result.vf, true)
 	}
 }
 

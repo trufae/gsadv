@@ -40,7 +40,15 @@ fn view_text(text string, vf ViewFormat) ! {
 		os.flush()
 		os.system_args(['stty', state.output.trim_space()])
 	}
-	document_viewer(text, document_lines(text, vf))
+	mut doc := DocumentView{}
+	doc.set_text(text, vf, true)
+	mut screen := TuiScreen{}
+	for {
+		w, h := terminal_size()
+		screen.draw(doc.frame(w, h), w, h)
+		doc.cursor(w, h)
+		if !doc.handle(key(w, h)) { return }
+	}
 }
 
 fn document_lines(text string, vf ViewFormat) []string {
@@ -99,103 +107,138 @@ fn wrap_document(lines []string, width int) []DocumentRow {
 	return rows
 }
 
-fn document_viewer(text string, lines []string) {
-	mut screen := TuiScreen{}
-	mut rows := []DocumentRow{}
-	mut wrapped_width := 0
-	mut anchor := DocumentRow{}
-	mut top := 0
-	mut entering := false
-	mut command := ''
-	mut status := ''
-	for {
-		w, h := terminal_size()
-		width := int_max(1, line_width(w))
-		if width != wrapped_width {
-			rows = wrap_document(lines, width)
-			wrapped_width = width
-			for i, row in rows {
-				if row.line > anchor.line || (row.line == anchor.line && row.offset > anchor.offset) {
-					break
-				}
-				top = i
+struct DocumentView {
+mut:
+	text     string
+	lines    []string
+	rows     []DocumentRow
+	width    int
+	page     int
+	anchor   DocumentRow
+	top      int
+	can_save bool
+	entering bool
+	cmd      string
+	status   string
+}
+
+fn (mut doc DocumentView) set_text(text string, vf ViewFormat, can_save bool) {
+	doc.text = text
+	doc.lines = document_lines(text, vf)
+	doc.width = 0
+	doc.anchor = DocumentRow{}
+	doc.top = 0
+	doc.can_save = can_save
+}
+
+fn (mut doc DocumentView) frame(w int, h int) []string {
+	width := int_max(1, line_width(w))
+	if width != doc.width {
+		doc.rows = wrap_document(doc.lines, width)
+		doc.width = width
+		for i, row in doc.rows {
+			if row.line > doc.anchor.line || (row.line == doc.anchor.line && row.offset > doc.anchor.offset) {
+				break
 			}
+			doc.top = i
 		}
-		page := if h > 1 || entering { h - 1 } else { 1 }
-		last := int_max(0, rows.len - int_max(1, page))
-		mut frame := []string{len: h}
-		for i in 0 .. int_min(page, rows.len - top) {
-			frame[i] = rows[top + i].text
-		}
-		footer := if entering {
-			input_line(':', command, width)
-		} else if status != '' {
-			status
+	}
+	doc.page = if h > 1 || doc.entering { h - 1 } else { 1 }
+	mut frame := []string{len: h}
+	for i in 0 .. int_min(doc.page, doc.rows.len - doc.top) {
+		frame[i] = doc.rows[doc.top + i].text
+	}
+	if h > 1 || doc.entering {
+		frame[h - 1] = if doc.entering {
+			input_line(':', doc.cmd, width)
+		} else if doc.status != '' {
+			doc.status
 		} else {
-			position := '${rows[top].line + 1}/${lines.len}'
-			term.dim(position) + '  ' + key_hints(['↑/↓ scroll', ':w <path> save', 'q close'],
-				width - position.len - 2)
+			pos := '${doc.rows[doc.top].line + 1}/${doc.lines.len}'
+			mut hints := ['↑/↓ scroll']
+			if doc.can_save { hints << ':w <path> save' }
+			hints << 'q close'
+			term.dim(pos) + '  ' + key_hints(hints, width - pos.len - 2)
 		}
-		if h > 1 || entering { frame[h - 1] = footer }
-		screen.draw(frame, w, h)
-		if entering {
-			print('\x1b[${h};${int_min(w, term.printable_len(footer) + 1)}H')
-			os.flush()
+	}
+	return frame
+}
+
+fn (doc DocumentView) cursor(w int, h int) {
+	if doc.entering {
+		footer := input_line(':', doc.cmd, doc.width)
+		print('\x1b[${h};${int_min(w, term.printable_len(footer) + 1)}H')
+		os.flush()
+	}
+}
+
+// Return false when the document should close.
+fn (mut doc DocumentView) handle(k string) bool {
+	if k == '' { return true }
+	if doc.entering { return doc.command_key(k) }
+	doc.status = ''
+	previous := doc.top
+	page := int_max(1, doc.page)
+	last := int_max(0, doc.rows.len - page)
+	match k {
+		'q', '\x1b', '\x03', '\x04' { return false }
+		'j', '\x1b[B' { doc.top = int_max(doc.top, int_min(last, doc.top + 1)) }
+		'k', '\x1b[A' { doc.top = int_max(0, doc.top - 1) }
+		'J', 'l', ' ', '\x1b[6~', '\x1b[C' {
+			doc.top = int_max(doc.top, int_min(last, doc.top + page))
 		}
-		k := key(w, h)
-		if k == '' { continue }
-		if entering {
-			match k {
-				'\x1b', '\x03', '\x04' { entering = false }
-				'\n', '\r' {
-					entering = false
-					verb := command.trim_space().fields()[0] or { '' }
-					match verb {
-						'q' { return }
-						'w' {
-							path := command.trim_space().all_after_first(verb).trim_space()
-							if path == '' {
-								status = 'Usage: :w <path>'
-							} else {
-								status = 'Saved ${path}'
-								save_document(text, path) or { status = 'Save failed: ${err}' }
-							}
-						}
-						'' {}
-						else { status = 'Use :w <path> to save or :q to close' }
+		'K', 'h', 'b', '\x1b[5~', '\x1b[D' { doc.top = int_max(0, doc.top - page) }
+		'g', '\x1b[H', '\x1bOH', '\x1b[1~' { doc.top = 0 }
+		'G', '\x1b[F', '\x1bOF', '\x1b[4~' { doc.top = last }
+		':' {
+			doc.cmd = ''
+			doc.entering = true
+			print('\x1b[?25h\x1b[?1000l\x1b[?1006l')
+		}
+		else {}
+	}
+	if doc.top != previous { doc.anchor = doc.rows[doc.top] }
+	return true
+}
+
+fn (mut doc DocumentView) command_key(k string) bool {
+	match k {
+		'\x1b', '\x03', '\x04' { doc.entering = false }
+		'\n', '\r' {
+			doc.entering = false
+			cmd := doc.cmd.trim_space()
+			verb := cmd.fields()[0] or { '' }
+			match verb {
+				'q' {
+					print('\x1b[?25l\x1b[?1000h\x1b[?1006h')
+					return false
+				}
+				'w' {
+					path := cmd[verb.len..].trim_space()
+					if path == '' {
+						doc.status = 'Usage: :w <path>'
+					} else if doc.can_save {
+						doc.status = 'Saved ${path}'
+						save_document(doc.text, path) or { doc.status = 'Save failed: ${err}' }
+					} else {
+						doc.status = 'No document to save'
 					}
 				}
-				'\x15' { command = '' }
-				'\x7f', '\x08' {
-					chars := command.graphemes()
-					command = chars#[..chars.len - 1].join('')
-				}
-				else {
-					if k[0] >= 0x20 { command += k }
-				}
+				'' {}
+				else { doc.status = 'Use :w <path> to save or :q to close' }
 			}
-			if !entering { print('\x1b[?25l\x1b[?1000h\x1b[?1006h') }
-			continue
 		}
-		status = ''
-		previous := top
-		match k {
-			'q', '\x1b', '\x03', '\x04' { return }
-			'j', '\x1b[B' { top = int_max(top, int_min(last, top + 1)) }
-			'k', '\x1b[A' { top = int_max(0, top - 1) }
-			'J', ' ', '\x1b[6~' { top = int_max(top, int_min(last, top + int_max(1, page))) }
-			'K', 'b', '\x1b[5~' { top = int_max(0, top - int_max(1, page)) }
-			'g', '\x1b[H', '\x1bOH', '\x1b[1~' { top = 0 }
-			'G', '\x1b[F', '\x1bOF', '\x1b[4~' { top = last }
-			':' {
-				command = ''
-				entering = true
-				print('\x1b[?25h\x1b[?1000l\x1b[?1006l')
-			}
-			else {}
+		'\x15' { doc.cmd = '' }
+		'\x7f', '\x08' {
+			chars := doc.cmd.graphemes()
+			doc.cmd = chars#[..chars.len - 1].join('')
 		}
-		if top != previous { anchor = rows[top] }
+		else {
+			if k[0] >= 0x20 { doc.cmd += k }
+		}
 	}
+	if !doc.entering { print('\x1b[?25l\x1b[?1000h\x1b[?1006h') }
+	return true
 }
 
 fn save_document(text string, destination string) ! {

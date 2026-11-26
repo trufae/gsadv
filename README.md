@@ -36,6 +36,12 @@ text to a new file. Paths can contain spaces and start with `~/`. Press `q`,
 type `:q` or press Esc to close. `NO_COLOR=1` shows the source in the viewer.
 Set `PAGER` to open the original text in an external pager.
 
+Press `-` on an advisory, commit, issue, pull or merge request, or report to
+preview the selected item. The list stays above and the preview takes roughly
+the lower two thirds of the terminal. Use `j`/`k` or Up/Down to scroll by line,
+and `h`/`l`, Left/Right or Page Up/Page Down to scroll by page. Use `:w <path>`
+to save a copy or `q` to close the preview and return to the full list.
+
 The shared issue/PR/MR label filter is the `label` setting (press `,`); an empty
 value shows all labels. Results appear page by page while the remaining history
 loads in the background. Changing the label takes effect after the current page finishes.
