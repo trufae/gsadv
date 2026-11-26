@@ -25,6 +25,9 @@ def stub():
         return
     if client == 'agent':
         prompt = sys.stdin.read()
+        if (root / 'fail-agent').exists():
+            (root / 'fail-agent').unlink()
+            sys.exit('fixture agent crashed')
         (root / 'prompt').write_text(prompt)
         if prompt.startswith('Quickfix report '):
             finding = root / FINDING
@@ -483,9 +486,13 @@ def tui_smoke(binary, root, env):
         until('[Reports 1 (all)]')
         os.write(master, b'a')
         until('Choose a key')
+        (root / 'fail-agent').touch()
         os.write(master, b'F')
         until('Extra context')
         os.write(master, b'Check the guard\r')
+        failure = re.sub(r'\x1b\[[0-9;]*m', '', until('\r\n> '))
+        assert '✗ quickfix failed' in failure and 'r retry u resume without AI Enter return' in failure, failure
+        os.write(master, b'r')
         until('Press Enter to return')
         prompt = (root / 'prompt').read_text()
         assert prompt.startswith('Quickfix report ANT-2026-QUICKFIX')

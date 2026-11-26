@@ -438,13 +438,106 @@ fn tui_workflow(api Repository, args ...string) ! {
 	if terminal.exit_code != 0 { return error('workflow requires an interactive terminal') }
 	previous := os.signal_opt(.int, wait_for_workflow)!
 	defer { os.signal_opt(.int, previous) or {} }
+	failure := os.join_path(os.temp_dir(), 'gsadv-error-${os.getpid()}.txt')
+	os.rm(failure) or {}
+	os.setenv('GSADV_ERROR_FILE', failure, true)
+	defer {
+		os.unsetenv('GSADV_ERROR_FILE')
+		os.rm(failure) or {}
+	}
 	code := os.system_args([os.executable(), '--provider', api.provider, '-r', api.url(), ...args])
 	// An interrupted editor may leave echo/canonical input disabled.
 	os.system_args(['stty', terminal.output.trim_space()])
 	if code == 130 {
 		return error_with_code('cancelled; recovery files, if created, are at the path printed above', 130)
 	}
-	if code != 0 { eprintln('Workflow exited with status ${code}') }
+	if code != 0 {
+		msg := (os.read_file(failure) or { '' }).trim_space()
+		return error_with_code(if msg == '' { 'exited with status ${code}' } else { msg }, code)
+	}
+}
+
+// The error of an action that was already shown with failure_prompt.
+const shown_failure = 125
+
+// Run a workflow and, with pause, keep its output on screen until it is acknowledged.
+// A failure is repeated in red and can be retried or resumed without the AI.
+fn workflow_pause(api Repository, pause bool, args ...string) ! {
+	mut cmd := args.clone()
+	for {
+		tui_workflow(api, ...cmd) or {
+			if err.code() == 130 { return err }
+			resume := resume_dir(err.msg())
+			match failure_prompt(cmd[0], err.msg(), resume != '') {
+				'r' { continue }
+				'u' { cmd = ['resume', resume]; continue }
+				else {}
+			}
+			summary := err.msg().split_into_lines()[0] or { '' }
+			hint := if resume == '' { '' } else { ' | u: gsadv resume ${os.quoted_path(resume)}' }
+			return error_with_code('${cmd[0]} failed: ${summary}${hint}', shown_failure)
+		}
+		if pause { pause_key(term.green('${cmd[0]} done.') + ' Press Enter to return: ') }
+		return
+	}
+}
+
+// The recovery directory named by a "Resume without AI" hint, unquoted.
+fn resume_dir(msg string) string {
+	for line in msg.split_into_lines() {
+		if !line.starts_with('Resume without AI: gsadv resume ') { continue }
+		dir := line.all_after('gsadv resume ').trim_space()
+		if dir.len >= 2 && dir[0] == `'` && dir[dir.len - 1] == `'` {
+			return dir[1..dir.len - 1].replace("'\\''", "'")
+		}
+		return dir
+	}
+	return ''
+}
+
+// Highlight a failure below the action output; Enter or Esc returns.
+fn failure_prompt(name string, msg string, can_resume bool) string {
+	w, _ := terminal_size()
+	println('')
+	println(term.bold(term.red('✗ ${name} failed')))
+	for i, line in msg.split_into_lines() {
+		println(if i == 0 {
+			term.red(line)
+		} else if line.starts_with('Resume without AI:') {
+			term.cyan(line)
+		} else {
+			line
+		})
+	}
+	mut hints := ['r retry']
+	if can_resume { hints << 'u resume without AI' }
+	hints << 'Enter return'
+	println(key_hints(hints, line_width(w)))
+	for {
+		k := pause_key('> ')
+		if k == '' || k == 'r' || (k == 'u' && can_resume) { return k }
+	}
+	return ''
+}
+
+// Read one key; Enter, Esc and Ctrl+C return an empty string.
+fn pause_key(prompt string) string {
+	terminal := os.exec(['stty', '-g'])
+	if terminal.exit_code != 0 { return '' }
+	os.system_args(['stty', '-icanon', '-echo', '-isig', 'min', '0', 'time', '2'])
+	defer {
+		os.system_args(['stty', terminal.output.trim_space()])
+		println('')
+	}
+	print(prompt)
+	os.flush()
+	for {
+		w, h := terminal_size()
+		k := key(w, h)
+		if k in ['\n', '\r', '\x1b', '\x03', '\x04'] { return '' }
+		if k != '' { return k }
+	}
+	return ''
 }
 
 // A cancellable line prompt, with the same key handling as the TUI forms.
@@ -491,33 +584,27 @@ fn run(k string, api Repository, id string, input string) ! {
 		'r' {
 			if input == '' { advisory_tui(api, id, k)!; return }
 			ctx := action_input('Review source with AI. Extra context (optional; Esc cancels): ') or { return }
-			tui_workflow(api, 'review', input, ctx)!
-			action_input('Press Enter to return (Ctrl+C/Esc also returns): ') or {}
+			workflow_pause(api, true, 'review', input, ctx)!
 		}
 		'R' {
 			ctx := action_input('Review the PR/MR for its contributor with AI. Extra context (optional; Esc cancels): ') or { return }
-			tui_workflow(api, 'pr-review', input, ctx)!
-			action_input('Press Enter to return (Ctrl+C/Esc also returns): ') or {}
+			workflow_pause(api, true, 'pr-review', input, ctx)!
 		}
 		'M' {
-			tui_workflow(api, 'comment', input)!
-			action_input('Press Enter to return (Ctrl+C/Esc also returns): ') or {}
+			workflow_pause(api, true, 'comment', input)!
 		}
 		'b' {
 			if input == '' {
 				advisory_tui(api, id, k)!
 			} else {
-				if !similar_tui(api, input)! { return }
-				action_input('Press Enter to return (Ctrl+C/Esc also returns): ') or {}
+				similar_tui(api, input)!
 			}
 		}
 		'import' {
-			tui_workflow(api, 'import', input)!
-			action_input('Press Enter to return (Ctrl+C/Esc also returns): ') or {}
+			workflow_pause(api, true, 'import', input)!
 		}
 		'N' {
-			tui_workflow(api, 'new')!
-			action_input('Press Enter to return (Ctrl+C/Esc also returns): ') or {}
+			workflow_pause(api, true, 'new')!
 		}
 		'n' {
 			args := if input != '' {
@@ -528,8 +615,7 @@ fn run(k string, api Repository, id string, input string) ! {
 			trimmed := args.trim_space()
 			if trimmed != '' {
 				ctx := if trimmed.contains(' ') { trimmed.all_after_first(' ') } else { '' }
-				tui_workflow(api, 'new', trimmed.all_before(' '), ctx)!
-				action_input('Press Enter to return (Ctrl+C/Esc also returns): ') or {}
+				workflow_pause(api, true, 'new', trimmed.all_before(' '), ctx)!
 			}
 		}
 		else {
@@ -551,7 +637,7 @@ fn similar_tui(api Repository, input string) !bool {
 	println('Example: Look for the same missing bounds check in related parsers and callers.')
 	println('Enter to search; Ctrl+C or Esc to cancel. Ctrl+C also cancels the running AI.')
 	ctx := action_input('extra context (optional): ') or { return false }
-	tui_workflow(api, 'similar', input, ctx)!
+	workflow_pause(api, true, 'similar', input, ctx)!
 	return true
 }
 
@@ -561,14 +647,14 @@ fn advisory_tui(api Repository, id string, first string) ! {
 	for {
 		match action {
 			'v' { view_text(api.advisory(id)!)! }
-			'e' { tui_workflow(api, 'edit', id)! }
+			'e' { workflow_pause(api, false, 'edit', id)! }
 			'b' { if !similar_tui(api, id)! { return } }
 			'r' {
 				println('Review ${id} with AI, then inspect its proposed changes in \$EDITOR.')
 				println('Example: Check the affected versions and whether the fix addresses the root cause.')
 				println('Enter to review; Ctrl+C or Esc to cancel. Ctrl+C also cancels the running AI.')
 				ctx := action_input('extra context (optional): ') or { return }
-				tui_workflow(api, 'review', id, ctx)!
+				workflow_pause(api, false, 'review', id, ctx)!
 			}
 			else {}
 		}
@@ -1281,19 +1367,11 @@ fn tui(initial_api Repository, initial_label string) {
 				})
 				println('The default Claude preset may edit files; set GSADV_AI to change the agent or its permissions.')
 				if ctx := action_input('Extra context (optional; Enter starts, Esc cancels): ') {
-					tui_workflow(api, fix_command, path, ctx) or {
-						println('error: ${err}')
-					}
-					action_input('Press Enter to return (Ctrl+C/Esc also returns): ') or {}
+					workflow_pause(api, true, fix_command, path, ctx) or { status = err.msg() }
 				}
 				loader.request(api, label, .git_status, true)
 			} else if k == 'b' {
-				if similar_tui(api, path) or {
-					println('error: ${err}')
-					true
-				} {
-					action_input('Press Enter to return (Ctrl+C/Esc also returns): ') or {}
-				}
+				similar_tui(api, path) or { status = err.msg() }
 			} else {
 				shown := match k {
 					'o' { result_path(path) }
@@ -1477,7 +1555,7 @@ fn tui(initial_api Repository, initial_label string) {
 				}
 				cooked()
 				run(k, api, id, if k in ['e', 's', 'C'] { '' } else { show_input }) or {
-					if err.code() == 130 {
+					if err.code() in [130, shown_failure] {
 						status = err.msg()
 					} else {
 						println('error: ${err}')

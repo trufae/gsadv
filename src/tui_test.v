@@ -1,6 +1,7 @@
 module main
 
 import encoding.utf8
+import os
 import term
 
 fn test_clip_terminal_cells_and_styles() {
@@ -213,4 +214,10 @@ fn test_selection_movement_only_paints_two_rows() {
 	assert screen.clipped.len == 30
 	assert screen.render(lines, 8, 30) != ''
 	assert screen.lines[29] == 'new bot'
+}
+
+fn test_resume_dir_unquotes_resume_hint() {
+	dir := "/tmp/gsadv-x/it's here"
+	assert resume_dir('invalid Claude event\nResume without AI: gsadv resume ${os.quoted_path(dir)}') == dir
+	assert resume_dir('no hint') == ''
 }

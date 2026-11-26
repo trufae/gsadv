@@ -2,7 +2,7 @@ PREFIX ?= $(HOME)/.local
 BINDIR ?= $(PREFIX)/bin
 SRC = $(filter-out %_test.v,$(wildcard src/*.v))
 BIN = gsadv
-VFLAGS ?= -b arm64
+VFLAGS ?=
 
 all: $(BIN)
 

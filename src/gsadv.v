@@ -1,6 +1,7 @@
 module main
 
 import os
+import term
 
 const version = $embed_file('../VERSION').to_string().trim_space()
 
@@ -68,6 +69,18 @@ fn issue_label(args []string) string {
 	return project_setting('label')
 }
 
+// Report a fatal error. The TUI sets GSADV_ERROR_FILE to repeat it once the
+// child exits, so a failure is not lost in the scrolled output.
+@[noreturn]
+fn die(err IError) {
+	label := if term.can_show_color_on_stderr() { term.bold(term.red('error:')) } else { 'error:' }
+	eprintln('${label} ${err.msg()}')
+	if path := os.getenv_opt('GSADV_ERROR_FILE') {
+		os.write_file(path, err.msg()) or {}
+	}
+	exit(1)
+}
+
 fn main() {
 	mut args := os.args[1..].clone()
 	for args.len > 0 && args[0] in ['-r', '--provider', '--host', '--remote', '--label', '--grep'] {
@@ -96,8 +109,7 @@ fn main() {
 	ctx := if args.len > 2 { args[2..].join(' ') } else { '' }
 	if cmd == 'recover' {
 		cmd_recover(args[1..]) or {
-			eprintln('error: ${err}')
-			exit(1)
+			die(err)
 		}
 		return
 	}
@@ -107,8 +119,7 @@ fn main() {
 			exit(1)
 		}
 		resume_edit(os.real_path(id), false) or {
-			eprintln('error: ${err}')
-			exit(1)
+			die(err)
 		}
 		return
 	}
@@ -154,8 +165,7 @@ fn main() {
 		}
 		'invalid', 'unmark' {
 			target := api.invalid_target(id) or {
-				eprintln('error: ${err}')
-				exit(1)
+				die(err)
 			}
 			if cmd == 'invalid' {
 				if ctx.trim_space() == '' {
@@ -165,8 +175,7 @@ fn main() {
 					return
 				}
 				api.mark_invalid(target, ctx) or {
-					eprintln('error: ${err}')
-					exit(1)
+					die(err)
 				}
 				println('Marked ${id} invalid locally: ${ctx}')
 			} else {
@@ -176,14 +185,12 @@ fn main() {
 		}
 		'new' {
 			cmd_new(api, id, ctx) or {
-				eprintln('error: ${err}')
-				exit(1)
+				die(err)
 			}
 		}
 		'import' {
 			cmd_import(api, id) or {
-				eprintln('error: ${err}')
-				exit(1)
+				die(err)
 			}
 		}
 		'show' {
@@ -194,45 +201,39 @@ fn main() {
 		}
 		'credits' {
 			credits_tui(api, id) or {
-				eprintln('error: ${err}')
-				exit(1)
+				die(err)
 			}
 		}
 		'edit' {
 			cmd_edit(api, id) or {
-				eprintln('error: ${err}')
-				exit(1)
+				die(err)
 			}
 		}
 		'review' {
 			if api.is_advisory(id) {
-				cmd_review(api, id, ctx) or { eprintln('error: ${err}'); exit(1) }
+				cmd_review(api, id, ctx) or { die(err) }
 			} else {
-				cmd_source_review(api, id, ctx) or { eprintln('error: ${err}'); exit(1) }
+				cmd_source_review(api, id, ctx) or { die(err) }
 			}
 		}
 		'pr-review' {
 			cmd_pr_review(api, id, ctx) or {
-				eprintln('error: ${err}')
-				exit(1)
+				die(err)
 			}
 		}
 		'comment' {
 			cmd_comment(api, id, ctx) or {
-				eprintln('error: ${err}')
-				exit(1)
+				die(err)
 			}
 		}
 		'similar' {
 			cmd_similar(api, id, ctx) or {
-				eprintln('error: ${err}')
-				exit(1)
+				die(err)
 			}
 		}
 		'fix', 'quickfix' {
 			cmd_fix(api, id, ctx, cmd == 'quickfix') or {
-				eprintln('error: ${err}')
-				exit(1)
+				die(err)
 			}
 		}
 		'cve', 'approve' {

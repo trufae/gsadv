@@ -145,6 +145,11 @@ The full conversation remains in the saved transcript. Failures include a copyab
 `gsadv resume <directory>` command; resuming automatically restores a completed
 advisory from that transcript if `reply.txt` is missing or contains no advisory.
 
+When an action started from the TUI fails, the error is repeated in red below its
+output with the keys that apply: `r` retries the action, `u` resumes it without the
+AI when recovery files exist, and Enter returns. The error and its resume command
+stay in the status line after returning.
+
 Commit and PR analysis accepts patches containing literal terminal escape bytes,
 such as terminal output test fixtures.
 

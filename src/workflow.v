@@ -410,17 +410,21 @@ struct ClaudeEvent {
 	type string
 	subtype string
 	parent_tool_use_id ?string
-	// Conversation turns carry a message object, but system notices such as
-	// permission_denied use a plain string, so it is decoded on demand.
-	message json2.Any
 	result string
 	is_error bool
 	errors []string
 }
 
-fn (event ClaudeEvent) content() []ClaudeContent {
-	if event.message !is map[string]json2.Any { return [] }
-	return json2.decode[ClaudeMessage](event.message.json_str()) or { ClaudeMessage{} }.content
+// Conversation turns carry a message object, but system notices such as
+// permission_denied use a plain string, so the message is decoded only from
+// user and assistant events. (Re-encoding a json2.Any crashes -b arm64 builds.)
+struct ClaudeTurn {
+	message ClaudeMessage
+}
+
+fn (event ClaudeEvent) content(line string) []ClaudeContent {
+	if event.type !in ['user', 'assistant'] { return [] }
+	return (json2.decode[ClaudeTurn](line) or { ClaudeTurn{} }).message.content
 }
 
 struct ClaudeStream {
@@ -483,7 +487,7 @@ fn (mut stream ClaudeStream) event(line string, output string) ! {
 			if event.subtype == 'init' { stream.say('[claude] session started') }
 		}
 		'assistant' {
-			for block in event.content() {
+			for block in event.content(line) {
 				if block.type == 'text' && block.text != '' {
 					if event.parent_tool_use_id == none && !stream.finished {
 						mut file := os.open_append(output)!
@@ -659,7 +663,7 @@ fn read_chat(path string) ![]ChatEvent {
 					'user'
 				}
 				mut blocks := []ChatBlock{}
-				for block in event.content() {
+				for block in event.content(line) {
 					match block.type {
 						'text' {
 							blocks << ChatBlock{
