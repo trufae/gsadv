@@ -388,7 +388,10 @@ def tui_smoke(binary, root, env):
         while time.monotonic() < deadline:
             if select.select([master], [], [], 0.1)[0]:
                 output += os.read(master, 65536)
-                if needle.encode() in output:
+                # A PTY read may split a redraw between its tab header and footer.
+                # Wait for autowrap to be restored before inspecting that frame.
+                if (needle.encode() in output
+                        and output.rfind(b'\x1b[?7l') <= output.rfind(b'\x1b[?7h')):
                     return output.decode(errors='replace')
         raise AssertionError((needle, output.decode(errors='replace')))
 
