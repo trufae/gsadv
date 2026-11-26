@@ -39,6 +39,24 @@ def stub():
         if prompt.startswith('Review this commit, issue or pull/merge request'):
             print('## Review\nCheck the parser bounds before reading.\nVerified the supplied diff.')
             sys.exit(1 if os.environ.get('FAIL_AI') else 0)
+        if prompt.startswith('Implement the change requested by '):
+            assert 'AGENTS.md' in prompt and 'Follow-up evidence' in prompt
+            (root / 'issue-implementation.txt').write_text('Fixture implementation\n')
+            print('Implemented the issue locally.')
+            return
+        if prompt.startswith('Investigate https://'):
+            assert 'AGENTS.md' in prompt and 'Follow-up evidence' in prompt
+            print('Keep the current parser API and handle truncated records at the input boundary.')
+            return
+        if prompt.startswith('Find issues related to '):
+            assert 'Use glab' in prompt and 'open and closed' in prompt
+            prefix = 'https://gitlab.com/group/sub/repo/-/issues/'
+            matches = [{'url': prefix + '42', 'body': 'Related parser behavior is tracked in #43.'},
+                       {'url': prefix + '43', 'body': 'The requirements for this parser are discussed in #42.'}]
+            if os.environ.get('RELATED_OTHER_PROJECT'):
+                matches[1]['url'] = 'https://gitlab.com/wrong/repo/-/issues/43'
+            print(json.dumps({'summary': 'Issue 43 concerns the same parser.', 'comments': matches}))
+            return
         print('summary: Reviewed report\nseverity: high\ncwe: CWE-125\ncredits: alice:finder\n'
               'package: parser\necosystem: other\naffected: < 2\npatched: 2\n---\n'
               'Verified bounds check. CVE-2026-12345\n'
@@ -129,7 +147,8 @@ def stub():
                   author={'username': 'alice'}, merge_commit_sha='a'*40,
                   source_branch='fix', target_branch='main')
         if endpoint == 'merge_requests':
-            result = [mr] if 'labels' not in query or query['labels'][0] == 'cve' else []
+            result = [mr] if (query['state'][0] in ['all', 'merged']
+                              and ('labels' not in query or query['labels'][0] == 'cve')) else []
         else:
             result = mr
     elif endpoint.endswith('/notes'):
@@ -175,7 +194,8 @@ def main():
             script.chmod(0o755)
         env = {k: v for k, v in os.environ.items() if not k.startswith(('GSADV_', 'GHADV_')) and k not in ['GH_HOST', 'GITLAB_HOST']}
         env.update(PATH=str(bindir) + os.pathsep + env['PATH'], FORGE_FIXTURE=str(root),
-                   XDG_STATE_HOME=str(root / 'state'), TMPDIR=str(root), EDITOR='true', PAGER='',
+                   XDG_STATE_HOME=str(root / 'state'), XDG_CACHE_HOME=str(root / 'cache'),
+                   TMPDIR=str(root), EDITOR='true', PAGER='',
                    GSADV_AI=shlex.quote(str(bindir / 'agent')))
         subprocess.run(['git', 'init', '-q', str(root)], check=True)
         subprocess.run(['git', '-C', str(root), 'remote', 'add', 'origin', 'git@gitlab.com:group/sub/repo.git'], check=True)
@@ -270,6 +290,34 @@ def main():
         assert all(c['method'] == 'GET' for c in calls()[count:])
         assert 'Review report saved' in run('review', 'a'*40)
         assert all(c['method'] == 'GET' for c in calls()[count:])
+        issue_url = 'https://gitlab.com/group/sub/repo/-/issues/42'
+        count = len(calls())
+        output = run('issue-fix', issue_url, 'Keep the parser API')
+        assert 'Implemented the issue locally.' in output
+        assert (root / 'issue-implementation.txt').read_text() == 'Fixture implementation\n'
+        assert 'Keep the parser API' in (root / 'prompt').read_text()
+        assert all(c['method'] == 'GET' for c in calls()[count:])
+        output = run('issue-review', '42', stdin='n\n')
+        assert 'Keep the current parser API' in output and 'Comment saved' in output
+        assert all(c['method'] == 'GET' for c in calls()[count:])
+        recovery = re.search(r'Recovery files: (.+)', output).group(1)
+        assert 'Comment posted:' in run('resume', recovery, stdin='y\n', overrides={'GSADV_AI': 'false'})
+        assert calls()[-1]['path'].endswith('/issues/42/notes')
+        count = len(calls())
+        rejected = run('issue-related', issue_url, expected=1, stdin='y\n',
+                       overrides={'RELATED_OTHER_PROJECT': '1'})
+        assert 'invalid comment target' in rejected and 'Post this comment' not in rejected
+        assert all(call['method'] == 'GET' for call in calls()[count:])
+        output = run('issue-related', issue_url, stdin='y\nn\n')
+        assert 'Issue 43 concerns the same parser.' in output
+        assert 'Comment posted:' in output and 'Comment saved' in output
+        posts = [call for call in calls()[count:] if call['method'] == 'POST']
+        assert len(posts) == 1 and posts[0]['path'].endswith('/issues/42/notes')
+        recovery = re.search(r'Recovery files: (.+)', output).group(1)
+        count = len(calls())
+        output = run('resume', recovery, stdin='y\n', overrides={'GSADV_AI': 'false'})
+        assert 'already posted' in output and 'Comment posted:' in output
+        assert len(calls()) == count + 1 and calls()[-1]['path'].endswith('/issues/43/notes')
         assert 'visibility: confidential' in run('status', 'GL-42')
         count = len(calls())
         run('invalid', 'GL-42', 'No released version affected')
@@ -466,15 +514,24 @@ def tui_smoke(binary, root, env):
         os.write(master, b'q')
         until('local git:')
         os.write(master, b'\t')
-        issues = until('[issues ')
+        issues = until('[issues 1 (opened)]')
         assert 'Reviewed report' in issues and 'Fix parser' not in issues
-        os.write(master, b'f')
-        until('(opened)]')
+        os.write(master, b'a')
+        menu = until('Choose a key')
+        assert 'M post a discussion comment' in menu and 'S implement the issue locally' in menu
+        assert 'R investigate requirements' in menu and 'B find related issues' in menu
+        os.write(master, b'R')
+        until('Investigate this issue and draft a comment.')
+        os.write(master, b'Keep the parser API\r')
+        comment = until('Post this comment to https://gitlab.com/group/sub/repo/-/issues/42?')
+        assert 'Keep the current parser API' in comment, comment
+        os.write(master, b'n\r')
+        until('issue-review done.')
+        os.write(master, b'\r')
+        until('[issues 1 (opened)]')
         os.write(master, b'\t')
-        mrs = until('[MRs ')
-        assert 'Fix parser' in mrs and 'Reviewed report' not in mrs
-        os.write(master, b'f')
-        until('[MRs 0 (opened)]')
+        mrs = until('[MRs 0 (opened)]')
+        assert 'Fix parser' not in mrs and 'Reviewed report' not in mrs
         os.write(master, b'f')
         until('[MRs 0 (closed)]')
         os.write(master, b'f')
@@ -516,7 +573,7 @@ def tui_smoke(binary, root, env):
         pos = re.search(r'\x1b\[12;1H\x1b\[0mScroll line (\d+)', moved)
         assert pos, moved
         line = int(pos.group(1))
-        os.write(master, b'j')
+        os.write(master, b'\r')
         until(f'\x1b[12;1H\x1b[0mScroll line {line + 1:02}')
         os.write(master, b'k')
         until(f'\x1b[12;1H\x1b[0mScroll line {line:02}')
@@ -540,12 +597,15 @@ def tui_smoke(binary, root, env):
         scrolled = until('<path> save')
         position = re.search(r'\x1b\[1;1H\x1b\[0m(Scroll line \d+)', scrolled)
         assert position, scrolled
-        anchor = position.group(1)
+        next_line = int(position.group(1).rsplit(' ', 1)[-1]) + 1
+        anchor = f'Scroll line {next_line:02}'
+        os.write(master, b'\n')
+        until(f'\x1b[1;1H\x1b[0m{anchor}')
         fcntl.ioctl(master, termios.TIOCSWINSZ, struct.pack('HHHH', 32, 55, 0, 0))
-        resized = until('<path> save')
+        resized = until('\x1b[32;1H')
         assert f'\x1b[1;1H\x1b[0m{anchor}' in resized, resized
         os.write(master, b'G')
-        wrapped = until('<path> save')
+        wrapped = until('界' * 16 + 'wrap tail')
         assert '\x1b[0;1m' + '界' * 27 in wrapped, wrapped
         assert '\x1b[0;1m' + '界' * 16 + 'wrap tail' in wrapped, wrapped
         os.write(master, b':w viewer copy.md\r')
@@ -621,11 +681,11 @@ def tui_smoke(binary, root, env):
         until('Saved label.')
         assert (root / '.gsadv.ini').read_text() == 'label=custom label\n'
         os.write(master, b'q')
-        until('No entries. Press , to change the label setting')
+        until('[issues 0 (all)]')
+        os.write(master, b'\t')
+        until('[MRs 0 (all)]')
         calls = [json.loads(line) for line in (root / 'calls').read_text().splitlines()]
         assert all('labels=custom+label' in c['path'] for c in calls[-2:])
-        os.write(master, b'\t')
-        until('[MRs 0')
         os.write(master, b',')
         until('label=custom label')
         os.write(master, b'j\r')
@@ -633,7 +693,7 @@ def tui_smoke(binary, root, env):
         os.write(master, b'\x15\r')
         until('Saved label.')
         os.write(master, b'q')
-        mrs = until('[MRs 1')
+        mrs = until('[MRs 1 (all)]')
         assert '/Fix parser' in mrs
         calls = [json.loads(line) for line in (root / 'calls').read_text().splitlines()]
         assert all('labels=' not in c['path'] for c in calls[-2:])

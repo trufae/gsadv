@@ -27,7 +27,7 @@ a published advisory by normalizing its state.
 | Request CVE | `POST /repos/{owner}/{repo}/security-advisories/{ghsa_id}/cve` |
 | Accept / reopen / publish / close | `PATCH .../{ghsa_id}` with `state=draft` / `published` / `closed` |
 | Commit patch | `GET /repos/{owner}/{repo}/commits/{sha}` with the `vnd.github.patch` media type |
-| Labeled issues/PRs | `GET /repos/{owner}/{repo}/issues?state=all&labels=...` (paginated) |
+| Labeled issues/PRs | `GET /repos/{owner}/{repo}/issues?state=...&labels=...` (paginated) |
 | Issue / PR details | `GET /repos/{owner}/{repo}/issues/{number}` or `.../pulls/{number}` |
 | Discussion | `GET /repos/{owner}/{repo}/issues/{number}/comments` (paginated, also for PRs) |
 | PR patch | `GET /repos/{owner}/{repo}/pulls/{number}` with the `vnd.github.patch` media type |

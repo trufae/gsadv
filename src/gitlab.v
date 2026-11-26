@@ -233,22 +233,19 @@ fn (api GitLab) issues(label string) ![][]string {
 	return rows
 }
 
-fn (api GitLab) issue_page(label string, page int) !([][]string, bool) {
-	filter := if label == '' { '' } else { '&labels=${urllib.query_escape(label)}' }
-	mut rows := [][]string{}
-	mut more := false
-	for kind in ['issues', 'merge_requests'] {
-		out := api.request('${api.project()}/${kind}?scope=all&state=all&per_page=100${filter}&page=${page}',
-			'--output', 'ndjson')!
-		lines := out.split_into_lines().filter(it.trim_space() != '')
-		more = more || lines.len == 100
-		for line in lines {
-			item := json2.decode[GitLabIssue](line)!
-			rows << [item.web_url, item.iid.str(), if kind == 'issues' { 'issue' } else { 'MR' },
-				item.state, item.title, item.user_notes_count.str()]
-		}
+fn (api GitLab) issue_page(query IssueQuery, page int) !([][]string, bool) {
+	filter := if query.label == '' { '' } else { '&labels=${urllib.query_escape(query.label)}' }
+	kind := if query.kind == .pulls { 'merge_requests' } else { 'issues' }
+	out := api.request('${api.project()}/${kind}?scope=all&state=${query.state}&per_page=100${filter}&page=${page}',
+		'--output', 'ndjson')!
+	lines := out.split_into_lines().filter(it.trim_space() != '')
+	mut rows := [][]string{cap: lines.len}
+	for line in lines {
+		item := json2.decode[GitLabIssue](line)!
+		rows << [item.web_url, item.iid.str(), if query.kind == .pulls { 'MR' } else { 'issue' },
+			item.state, item.title, item.user_notes_count.str()]
 	}
-	return rows, more
+	return rows, rows.len == 100
 }
 
 fn (api GitLab) status(id string) !string {

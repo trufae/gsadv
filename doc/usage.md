@@ -19,6 +19,9 @@ gsadv [-r namespace/repo|url] [--provider github|gitlab] [--host hostname] [--re
   edit <id>               edit advisory in $EDITOR
   review <id|commit|url> [context] AI review an advisory or source, then edit
   comment <issue|PR URL> [text] edit and confirm a discussion comment
+  issue-fix <issue URL|number> [context] implement the issue in the local checkout
+  issue-review <issue URL|number> [context] investigate requirements and draft a comment
+  issue-related <issue URL|number> [context] find related issues and draft cross-references
   similar <id|commit|url> [context] find similar bugs using the selection as a template
   resume <directory>       continue saved work without running the AI again
   recover <log|directory>  render a saved claude.jsonl as Markdown (partial replies)
@@ -133,12 +136,23 @@ gsadv -r owner/repo tui "needs-cve"
 
 Both commands accept an optional label, defaulting to `GSADV_LABEL`, `git config gsadv.label`
 or `cve`. Use `--label ''` or an empty `GSADV_LABEL` to include unlabelled items.
-The TUI has separate issues and PRs/MRs tabs, each with its own search, selection and scrolling.
-Both headers show the active label explicitly, or `all labels` when unfiltered.
+The TUI has separate issues and PRs/MRs tabs, each with its own state filter, search,
+selection and scrolling. Both start with open items and load other states on demand.
 The `issues` CLI command lists both types together. Items are fetched across
 all pages and states, including closed issues and merged PRs/MRs. The list shows any advisory
 referencing each item's URL. Press `n` in that tab to draft from the selected item.
 The label is not removed after draft creation or CVE requests.
+
+### issue-fix / issue-review / issue-related
+
+Each command accepts an issue URL or a number in the selected repository and
+optional context. `issue-fix` implements the issue in a matching local checkout.
+It leaves the changes in the working tree and saves an implementation summary.
+`issue-review` checks the discussion, code and `AGENTS.md` and drafts a comment
+with requirements, tradeoffs and a recommendation. `issue-related` searches the
+project tracker and drafts useful cross-references for the selected issue or its
+matches. Review each draft in `$EDITOR` and confirm each post separately.
+Drafts and posting receipts are kept in the recovery directory for `gsadv resume`.
 
 ### show / edit
 

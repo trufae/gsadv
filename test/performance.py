@@ -22,9 +22,17 @@ from pathlib import Path
 root = Path(os.environ['TEST_ROOT'])
 args = sys.argv[1:]
 if Path(sys.argv[0]).name == 'git':
-    kind = 'commits' if args[:1] == ['log'] and '-n' in args else 'git-status'
-elif args[:1] == ['repo']:
-    kind = 'repository'
+    if args[:2] == ['remote', 'get-url']:
+        kind = 'repository'
+    elif args == ['remote']:
+        print('origin')
+        sys.exit(0)
+    elif args[:2] == ['log', '-z']:
+        kind = 'commits'
+    elif args[:2] in (['log', '-1'], ['--no-optional-locks', 'status']):
+        kind = 'git-status'
+    else:
+        sys.exit(1)
 elif '--method' in args:
     kind = 'action'
 elif any('/issues?' in a for a in args):
@@ -53,14 +61,14 @@ def setup(root):
     for name in ('gh', 'git'):
         (root / name).write_text(STUB)
         (root / name).chmod(0o700)
-    (root / 'repository').write_text('owner/repo\n')
+    (root / 'repository').write_text('https://github.com/owner/repo\n')
     (root / 'git-status').write_text('')
     (root / 'status').write_text('advisory status loaded\n')
     (root / 'advisories').write_text(''.join(
         f'GHSA-{i:04}\tdraft\tCVE-2026-{i:04}\thigh\tAdvisory {i}\t{i+3000:040x}\t\n'
         for i in range(500)))
     (root / 'commits').write_text(''.join(
-        f'{i:040x}\t2026-11-09\tcommit-{i:04} Fix bounds check 界 é ##security\n'
+        f'{i:040x}\t2026-11-09\tcommit-{i:04} Fix bounds check 界 é ##security\t\0'
         for i in range(2000)))
     (root / 'issues').write_text('https://github.com/owner/repo/issues/1\t1\tissue\topen\tIssue one\n')
 
@@ -125,19 +133,19 @@ def background(binary, root):
         (root / 'hold-repository').unlink()
         wait_for(ui, lambda: calls(root, 'advisories') > 0 and calls(root, 'issues') > 0)
         # Repeated reload requests must not start overlapping copies of a blocked job.
-        ui.send('ggggg')
+        ui.send('\x12' * 5)
         ui.send('k')
         selected(ui, 0)
         assert calls(root, 'advisories') == 1 and calls(root, 'issues') == 1
         (root / 'hold-advisories').unlink()
         ui.expect('advisories 500 (all)')
         (root / 'hold-issues').unlink()
-        ui.expect('issues/PRs 1 (cve)')
+        ui.expect('issues 1 (open)')
         (root / 'hold-git-status').unlink()
         ui.expect('test head')
         # A failed background reload preserves the working list and its selection.
         (root / 'fail-commits').touch()
-        ui.send('g')
+        ui.send('\x12')
         ui.expect('deliberate commits failure')
         ui.send('j')
         selected(ui, 1)
@@ -155,7 +163,7 @@ def background(binary, root):
         # list response when the mutation requires a fresh snapshot.
         (root / 'hold-advisories').touch()
         before = calls(root, 'advisories')
-        ui.send('g')
+        ui.send('\x12')
         wait_for(ui, lambda: calls(root, 'advisories') > before)
         (root / 'hold-action').touch()
         ui.send('p')
@@ -180,7 +188,7 @@ def background(binary, root):
         # Quitting does not wait for outstanding read-only requests.
         (root / 'hold-issues').touch()
         before = calls(root, 'issues')
-        ui.send('g')
+        ui.send('\x12')
         wait_for(ui, lambda: calls(root, 'issues') > before)
         start = time.monotonic()
         ui.send('q')
@@ -198,7 +206,7 @@ def repository_failure(binary, root):
         ui.send('j')
         selected(ui, 1)
         (root / 'fail-repository').unlink()
-        ui.send('g')
+        ui.send('\x12')
         ui.expect('advisories 500 (all)')
         ui.send('q')
         ui.finish()

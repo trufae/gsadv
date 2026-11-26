@@ -4,6 +4,18 @@ import os
 import net.urllib
 import crypto.sha256
 
+enum IssueKind {
+	mixed
+	issues
+	pulls
+}
+
+struct IssueQuery {
+	label string
+	state string
+	kind IssueKind
+}
+
 // Keep the host with the project: identical paths can exist on different forges.
 interface Repository {
 	repo string
@@ -14,7 +26,7 @@ interface Repository {
 	advisory(id string) !string
 	status(id string) !string
 	issues(label string) ![][]string
-	issue_page(label string, page int) !([][]string, bool)
+	issue_page(query IssueQuery, page int) !([][]string, bool)
 	source_text(s Source, with_patch bool) !string
 	comment(s Source, body string) !string
 	create_advisory(a Adv) !string

@@ -7,7 +7,7 @@ At 120 columns or more it also shows the CVE and severity text. The selection li
 shows the patched versions, their release results, and recorded affected ranges;
 press `s` for the complete scrollable details, including any release lookup error.
 Use `/` to filter by version or release status and see the matching count in the tab.
-Press `g` to refresh release data. See [release matching](usage.md#ls) for the status
+Press `Ctrl+R` to refresh release data. See [release matching](usage.md#ls) for the status
 meanings and limits.
 
 Running `gsadv` with no command opens the TUI. The header identifies the provider, host
@@ -27,14 +27,14 @@ Views, switched forward with `tab` and backward with `shift-tab`:
 | issues | issues matching `GSADV_LABEL` (default `cve`, or `gsadv tui <label>`), number, state, linked advisory and title |
 | PRs / MRs | pull/merge requests matching the same label, number, state, linked advisory and title |
 
-The issues and PRs/MRs tabs keep their own search, selection and scroll position. Both show
-`label: cve` (or the configured label) in the header; `--label ''` shows `all labels` and
-includes unlabelled items. Press `l` from any tab to edit this shared label filter for
-the current session. Enter applies and reloads both tabs; Ctrl+U then Enter clears the
-filter to include all labels; Escape or Ctrl+C cancels. Changing the label resets both
-tabs to their first row and preserves their text searches. Both include every state, so
-closed issues and merged PRs remain available for reporting. `closed` in this list can
-mean either a merged or a closed, unmerged PR. Press Enter to preview its merge metadata.
+The issues and PRs/MRs tabs keep their own state filter, search, selection and scroll
+position. They request open items at startup. Press `f` for closed items or `F` for
+all states from the default view. On GitHub, `closed` includes merged and unmerged PRs.
+GitLab MRs also have a merged filter.
+
+Press `,` to edit the shared label in project settings. Ctrl+U then Enter clears
+the label to include all labels. Escape or Ctrl+C cancels. Changing the label resets
+both lists to their first row and preserves their state filters and text searches.
 
 For GitLab, the disclosure tab lists `security-advisory` issues (configurable with
 `GSADV_ADVISORY_LABEL`). Rows show the native `opened`/`closed` state and a separate
@@ -52,6 +52,7 @@ Keys:
 | `j` / `k` | move one row |
 | mouse wheel down / up | move one row, like `j` / `k` |
 | `J` / `K` | move ten rows |
+| `g` / `G` | jump to the first / last row in the current list |
 | `tab` / `shift-tab` | cycle views forward / backward, wrapping at either end and selecting a linked entry in the destination view when one exists |
 | Enter | preview the selected advisory, commit, issue, PR/MR or report below the list |
 | `v` | open the selected item in the full-screen viewer |
@@ -60,6 +61,9 @@ Keys:
 | `e` | edit the linked advisory |
 | `r` | AI-review the selected advisory or source, including sources without a linked advisory |
 | `M` | compose a discussion comment on the selected issue/PR/MR, then confirm posting |
+| `S` | implement the selected issue locally with the configured agent |
+| `R` | investigate issue requirements and draft a recommendation, or review a PR/MR for its contributor |
+| `B` | find related issues and draft cross-references where useful |
 | `b` | find similar bugs using the selected advisory or source as a template |
 | `C` | manage credited people and roles for the linked advisory |
 | `m` | open the selected item's actions menu, including linked advisory actions |
@@ -72,22 +76,30 @@ Keys:
 | `s` | show lifecycle, CVE, private-report status, timestamps and URL |
 | `f` / `F` | cycle all / triage / draft / published / closed forward / backward, wrapping at either end |
 | `/` | enter a case-insensitive text filter for the current list; empty input clears it |
-| `l` | change the shared issues/PRs/MRs label filter for this session; empty input shows all labels |
+| `,` | edit project settings, including the shared issues/PRs/MRs label |
 | `A` | cycle the AI agent preset |
-| `g` | reload all lists and local Git status |
+| `Ctrl+R` | reload the current queries and local Git status |
 | `?` | show all keys and the active AI agent |
 | `q` / `Ctrl+C` | quit from the main list |
 
 In the split preview, press `n` or `p` to move to the next or previous item in the
-current filtered list. Use `j`/`k` to scroll by line or `h`/`l` to scroll by page.
+current filtered list. Enter scrolls down one line in both the split preview and
+the full-screen viewer. Use `j`/`k` to scroll by line or `h`/`l` to scroll by page.
 Press `q` or Escape to return to the full list.
 
-Startup and `g` load advisories/disclosures, commits, labeled issues/PRs/MRs and Git status in background
-threads. The screen opens before these requests complete; tabs show `loading...` until
-their first result arrives. You can navigate available lists, switch tabs, filter or quit
-while other requests run. Results appear automatically. A reload keeps the existing data
-visible, and a failed reload reports the error while retaining that data. Repeated `g`
-presses do not launch overlapping requests for the same list.
+Startup and `Ctrl+R` load advisories/disclosures, commits, issues, PRs/MRs and Git
+status in background threads. New issue and PR/MR queries show pages as they arrive.
+When a complete result is cached for the current query, it stays visible until a
+refresh succeeds. A failed refresh reports the error and keeps the cached rows.
+Repeated `Ctrl+R` presses share the in-progress request for each list.
+
+The Issues action menu offers `M`, `S`, `R` and `B` even for issues without a
+linked advisory. `S` runs in a checkout with a remote for the issue's repository.
+The agent follows `AGENTS.md`, makes changes in the working tree and shows a summary.
+`R` uses the issue discussion, code and `AGENTS.md` to recommend an approach.
+`B` searches the same project's tracker, including closed issues, and proposes
+cross-references when they add context. Edit proposed comments and confirm each
+one separately before posting.
 
 Status requests show a loading screen that can be closed with Escape, Ctrl+C or `q`.
 Confirmed CVE and lifecycle updates also run in the background, allowing navigation
@@ -107,7 +119,7 @@ Local invalid tags apply only to the selected item. Press `i`, enter a reason su
 "No tagged release shipped vulnerable code", and press Enter to save; Escape or Ctrl+C
 cancels. An empty reason is rejected. Tagged rows show `[invalid]`, the status line shows
 the reason, and the actions menu wraps long reasons. Press `I` to remove the tag. The
-`/` filter also searches `invalid` and the reason. Tags survive restarts; `g` reloads tags
+`/` filter also searches `invalid` and the reason. Tags survive restarts. `Ctrl+R` reloads tags
 changed by another gsadv process. They leave GitHub/GitLab state and linked items unchanged. On GitLab, a disclosure ID
 and its issue URL identify the same tag, including when selected in different tabs.
 
@@ -140,8 +152,8 @@ CVE actions require confirmation; errors leave the advisory unchanged locally.
 
 Published advisories without a CVE offer `c request CVE`. On success, the list shows
 `requested*`, meaning gsadv recorded GitHub accepting the request. The record is saved
-locally and restored after closing and reopening the app. Press `g` to refresh the
-assigned CVE; `s` displays server details and the locally recorded acceptance time.
+locally and restored after closing and reopening the app. Press `Ctrl+R` to refresh the
+assigned CVE. `s` displays server details and the locally recorded acceptance time.
 The TUI suppresses repeat requests while the record exists, including after a restart.
 Assigned IDs replace the marker on refresh. See [local record storage](configuration.md#local-cve-request-records).
 
@@ -234,7 +246,7 @@ The first row shows the repository and local Git status: the latest commit hash,
 clean, unstaged, staged, untracked or conflicted indicators, then the commit subject.
 The status refers to the current checkout, even when `-r` selects another GitHub repository;
 it shows `unavailable` outside a working tree and `HEAD unavailable` when no commit can be read.
-It refreshes with `g` and after returning from a viewer, editor or AI workflow.
+It refreshes with `Ctrl+R` and after returning from a viewer, editor or AI workflow.
 Tabs occupy the second row, with the active view in brackets and the advisory state filter
 and issue label shown when space permits. Narrow windows omit counts and filters before
 falling back to the active tab; short windows prioritize the tab row over repository details.

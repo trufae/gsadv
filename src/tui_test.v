@@ -147,10 +147,10 @@ fn test_state_filters_follow_the_provider_and_view() {
 	for api in [github, gitlab] {
 		assert api.tui_states(1) == ['all']
 	}
-	assert github.tui_states(2) == ['all', 'open', 'closed']
-	assert github.tui_states(3) == ['all', 'open', 'closed']
-	assert gitlab.tui_states(2) == ['all', 'opened', 'closed']
-	assert gitlab.tui_states(3) == ['all', 'opened', 'closed', 'merged']
+	assert github.tui_states(2) == ['open', 'closed', 'all']
+	assert github.tui_states(3) == ['open', 'closed', 'all']
+	assert gitlab.tui_states(2) == ['opened', 'closed', 'all']
+	assert gitlab.tui_states(3) == ['opened', 'closed', 'merged', 'all']
 }
 
 fn test_issue_state_filter_uses_state_column_and_combines_with_text() {

@@ -22,11 +22,12 @@ name = Path(sys.argv[0]).name
 with (root / 'calls').open('a') as f:
     f.write(json.dumps([name, *args]) + '\\n')
 if name == 'git':
-    if args[0] == 'log':
+    if args[:2] == ['log', '-z']:
         print((root / 'commits').read_text(), end='')
+    elif args[:3] == ['--no-pager', 'show', '--no-color']:
+        print('Selected commit: ' + args[3])
     else:
-        assert args[0] == 'show', args
-        print('Selected commit: ' + args[1])
+        sys.exit(1)
 else:
     assert args[0] == 'api' and '--method' not in args and '--input' not in args, args
     endpoint = next(a for a in args if a.startswith('repos/'))
@@ -65,12 +66,12 @@ def checks(binary, root):
         f'\thttps://github.com/owner/repo/issues/{i}\n'
         for i, (name, state, title) in enumerate(rows, 1)))
     (root / 'commits').write_text(''.join(
-        f'{str(i) * 40}\t2026-01-01\t{title} fix\n'
+        f'{str(i) * 40}\t2026-01-01\t{title} fix\t\0'
         for i, (_, _, title) in enumerate(rows, 1)))
     (root / 'issues').write_text(''.join(
         f'https://github.com/owner/repo/issues/{i}\t{i}\tissue\topen\t{title} report\n'
         for i, (_, _, title) in enumerate(rows, 1)))
-    with Terminal(binary, root, 'tui', {'GSADV_LABEL': 'security', 'PAGER': 'viewer-pager'}) as ui:
+    with Terminal(binary, root, 'tui', {'GSADV_LABEL': 'security'}, size=(145, 24)) as ui:
         ui.expect('advisories 4 (all)')
         for key, states in [('F', ['closed', 'published', 'draft', 'triage', 'all']),
                             ('f', ['triage', 'draft', 'published', 'closed', 'all'])]:
@@ -95,7 +96,7 @@ def checks(binary, root):
             ui.expect('Filter text:')
             ui.send('different' + cancel)
             ui.expect('/bEtA |')
-        ui.send('g')
+        ui.send('\x12')
         # An unchanged reload emits no redraw; verify the retained selection instead.
         selected_advisory(ui, 'GHSA-two')
         assert 'No matches.' in filter_text(ui, '[literal.*]')
@@ -113,25 +114,28 @@ def checks(binary, root):
         assert '[commits 1]' in screen
         ui.send('\n')
         ui.expect('Selected commit: ' + '3' * 40)
+        ui.send('q')
         ui.expect('/ text')
         selected_advisory(ui, 'GHSA-three')
         filter_text(ui, 'ghsa-two')
         selected_advisory(ui, 'GHSA-two')
         ui.send('\n')
         ui.expect('Selected commit: ' + '2' * 40)
+        ui.send('q')
         ui.expect('/ text')
         ui.send('\t')
-        ui.expect('[issues/PRs 4 (security)]')
+        ui.expect('[issues 4 (open)]')
         selected_advisory(ui, 'GHSA-two')
         screen = filter_text(ui, 'gamma')
-        assert '[issues/PRs 1 (security)]' in screen
+        assert '[issues 1 (open)]' in screen
         ui.send('\n')
+        ui.expect('repos/owner/repo/issues/3')
+        ui.send('q')
         ui.expect('/ text')
-        assert 'repos/owner/repo/issues/3' in (root / 'viewed.md').read_text()
         selected_advisory(ui, 'GHSA-three')
 
         # Each tab retains its query; linking cannot select a hidden destination row.
-        ui.send('\t')
+        ui.send('H')
         ui.expect('/bEtA |')
         selected_advisory(ui, 'GHSA-two')
         ui.send('f')
@@ -140,20 +144,21 @@ def checks(binary, root):
         ui.expect('/ghsa-two |')
         ui.send('\t')
         ui.expect('/gamma |')
-        ui.send('\t')
+        ui.send('H')
         ui.expect('advisories 0 (triage)')
         ui.send('\t')
         ui.expect('/ghsa-two |')
         ui.send('\t')
         ui.expect('/gamma |')
         filter_text(ui, 'beta')
-        ui.send('\t')
+        ui.send('H')
         ui.expect('advisories 1 (all)')
         selected_advisory(ui, 'GHSA-two')
         ui.send('q')
         ui.finish()
     calls = [json.loads(line) for line in (root / 'calls').read_text().splitlines()]
-    assert ['git', 'show', '2' * 40] in calls and ['git', 'show', '3' * 40] in calls
+    for number in ['2', '3']:
+        assert ['git', '--no-pager', 'show', '--no-color', number * 40, '--'] in calls
 
 
 if __name__ == '__main__':

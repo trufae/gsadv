@@ -20,16 +20,22 @@ and `i` imports an `ADVISORY.md` when one is available (see the Reports tab belo
 Press `a` for the actions that apply to the selected item in the current tab
 (similar bugs, credits, CVE and state changes, comments, ...); each still has its
 direct key, listed in `?` help.
+In Issues, `M` writes a comment, `S` asks the agent to implement the issue in the
+local checkout, `R` investigates requirements against `AGENTS.md` and drafts a
+recommendation, and `B` searches for related issues and drafts useful cross-references.
+`S` leaves edits in the working tree. Each comment opens in `$EDITOR` and requires
+confirmation before posting.
 In the PRs/MRs tab, `R` asks the AI to review the selected pull/merge request for its
 contributor: merge blockers, logic bugs and similar bugs nearby, questions about the
 approach and follow-ups, written as a short comment. You edit it in `$EDITOR` and
 confirm before gsadv posts it (`gsadv pr-review <PR URL|number> [context]`).
 Use `J`/`K` or AvPág/RePág (Page Down/Page Up) to move down/up ten rows.
+Use `g`/`G` to jump to the first/last row in the current list. `Ctrl+R` reloads the lists.
 Switch to the next/previous tab with Tab/Shift-Tab, `l`/`h` or the right/left arrows.
 `H`/`L` jump to the first/last tab.
 
 Press `v` to open the full-screen viewer. It shows Markdown in terminal colors.
-Use `j`/`k`, the arrows, the mouse wheel or Page Down/Page Up to scroll, and
+Use Enter to scroll down one line. Use `j`/`k`, the arrows, the mouse wheel or Page Down/Page Up to scroll, and
 `g`/`G` to jump to the beginning/end. Lines wrap to the terminal width and the
 viewer keeps your place when the window resizes. Type `:w <path>` and press Enter
 to save the original text to a new file. Paths can contain spaces and start with
@@ -39,17 +45,18 @@ the viewer. Set `PAGER` to open the original text in an external pager.
 Press Enter on an advisory, commit, issue, pull or merge request, or report to
 preview the selected item. The list stays above and the preview takes roughly
 the lower two thirds of the terminal. Press `n` or `p` to preview the next or
-previous item in the list. Use `j`/`k` or Up/Down to scroll by line, and `h`/`l`,
+previous item in the list. Use Enter to scroll down one line, `j`/`k` or Up/Down to scroll by line, and `h`/`l`,
 Left/Right or Page Up/Page Down to scroll by page. Use `:w <path>` to save a copy
 or `q` to close the preview and return to the full list.
 
 The shared issue/PR/MR label filter is the `label` setting (press `,`); an empty
-value shows all labels. Results appear page by page while the remaining history
-loads in the background. Changing the label takes effect after the current page finishes.
-In the issues or PR/MR tab, press `f` once to show only open items. Press `f` again
-for closed items, or `F` to go back; GitLab MRs also have a merged filter. State
-filters are remembered separately for each tab and combine with the label and
-`/` (text) filters.
+value shows all labels. The Issues and PRs/MRs tabs load open items by default.
+Press `f` for closed items or `F` for all states from the default view. GitLab MRs
+also have a merged filter. Each tab remembers its state and text filters.
+Results load in the background. The last complete result for each repository,
+label and state appears immediately on later runs while gsadv refreshes it.
+The cache lives under `$XDG_CACHE_HOME/gsadv/` or `~/.cache/gsadv/` by default.
+The `gsadv issues` CLI command lists all states.
 
 The commits tab only lists commits whose message matches the `grep` setting
 (default `##(crash|security|vuln|sandbox)`), a `git log -E --grep` regex;

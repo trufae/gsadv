@@ -155,7 +155,7 @@ fn (mut doc DocumentView) frame(w int, h int, split bool) []string {
 			doc.status
 		} else {
 			pos := '${doc.rows[doc.top].line + 1}/${doc.lines.len}'
-			mut hints := ['↑/↓ scroll']
+			mut hints := ['↑/↓/Enter scroll']
 			if split { hints << 'n/p next/prev' }
 			if doc.can_save { hints << ':w <path> save' }
 			hints << 'q close'
@@ -183,7 +183,7 @@ fn (mut doc DocumentView) handle(k string) bool {
 	last := int_max(0, doc.rows.len - page)
 	match k {
 		'q', '\x1b', '\x03', '\x04' { return false }
-		'j', '\x1b[B' { doc.top = int_max(doc.top, int_min(last, doc.top + 1)) }
+		'j', '\x1b[B', '\n', '\r' { doc.top = int_max(doc.top, int_min(last, doc.top + 1)) }
 		'k', '\x1b[A' { doc.top = int_max(0, doc.top - 1) }
 		'J', 'l', ' ', '\x1b[6~', '\x1b[C' {
 			doc.top = int_max(doc.top, int_min(last, doc.top + page))

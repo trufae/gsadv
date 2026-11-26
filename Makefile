@@ -1,12 +1,13 @@
 PREFIX ?= $(HOME)/.local
 BINDIR ?= $(PREFIX)/bin
 SRC = $(filter-out %_test.v,$(wildcard src/*.v))
+PROMPTS = $(wildcard src/prompts/*.txt)
 BIN = gsadv
 VFLAGS ?=
 
 all: $(BIN)
 
-$(BIN): $(SRC) VERSION
+$(BIN): $(SRC) $(PROMPTS) VERSION
 	v $(VFLAGS) -o $(BIN) src
 
 install: $(BIN)

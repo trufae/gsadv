@@ -69,7 +69,7 @@ class Terminal:
         self.process = subprocess.Popen(
             args, stdin=self.slave, stdout=self.slave, stderr=self.slave,
             env=os.environ | {'PATH': str(root) + os.pathsep + os.environ['PATH'],
-                              'TEST_ROOT': str(root), 'TMPDIR': str(root),
+                              'TEST_ROOT': str(root), 'TMPDIR': str(root), 'XDG_CACHE_HOME': str(root / 'cache'),
                               'GSADV_LABEL': '', 'TERM': 'xterm-256color'} | (extra_env or {}),
             cwd=root, start_new_session=True,
             # Make typed Ctrl+C reach the foreground process group, as in a real terminal.

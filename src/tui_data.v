@@ -7,7 +7,6 @@ enum TuiLoadKind {
 	repository
 	advisories
 	commits
-	issues
 	git_status
 	reports
 }
@@ -17,15 +16,12 @@ struct TuiLoad {
 	text string
 	error string
 	repository Repository = GitHub{}
-	more bool
-mut:
 	rows [][]string
 }
 
 // Workers own their results; only the input loop changes the displayed snapshot.
-fn tui_load(api Repository, label string, kind TuiLoadKind, page int, results chan TuiLoad) {
+fn tui_load(api Repository, kind TuiLoadKind, results chan TuiLoad) {
 	mut rows := [][]string{}
-	mut more := false
 	mut text := ''
 	mut failure := ''
 	mut repository := api
@@ -37,42 +33,35 @@ fn tui_load(api Repository, label string, kind TuiLoadKind, page int, results ch
 		}
 		.advisories { rows = api.advisories_with_releases('') or { failure = err.msg(); [][]string{} } }
 		.commits { rows = commits() or { failure = err.msg(); [][]string{} } }
-		.issues { rows, more = api.issue_page(label, page) or { failure = err.msg(); [][]string{}, false } }
 		.git_status { text = local_git_status() }
 		.reports {
 			text = reports_base()
 			rows = find_reports(text, project_setting('attic'))
 		}
 	}
-	results <- TuiLoad{kind: kind, rows: rows, text: text, error: failure, repository: repository, more: more}
+	results <- TuiLoad{kind: kind, rows: rows, text: text, error: failure, repository: repository}
 }
 
 struct TuiLoader {
-	results chan TuiLoad = chan TuiLoad{cap: 6}
+	results chan TuiLoad = chan TuiLoad{cap: 5}
 mut:
-	pending []bool = []bool{len: 6}
-	again []bool = []bool{len: 6}
-	issue_page int = 1
-	issue_rows [][]string
+	pending []bool = []bool{len: 5}
+	again []bool = []bool{len: 5}
 }
 
 // Coalesce repeated reloads. A workflow may require a fresh snapshot after an
 // already running request; discard that old result before starting its successor.
-fn (mut loader TuiLoader) request(api Repository, label string, kind TuiLoadKind, fresh bool) {
+fn (mut loader TuiLoader) request(api Repository, kind TuiLoadKind, fresh bool) {
 	i := int(kind)
 	if loader.pending[i] {
 		loader.again[i] = loader.again[i] || fresh
 		return
 	}
 	loader.pending[i] = true
-	if kind == .issues {
-		loader.issue_page = 1
-		loader.issue_rows = [][]string{}
-	}
-	spawn tui_load(api, label, kind, 1, loader.results)
+	spawn tui_load(api, kind, loader.results)
 }
 
-fn (mut loader TuiLoader) poll(api Repository, label string) ?TuiLoad {
+fn (mut loader TuiLoader) poll(api Repository) ?TuiLoad {
 	for {
 		mut result := TuiLoad{}
 		if loader.results.try_pop(mut result) != .success { return none }
@@ -80,19 +69,8 @@ fn (mut loader TuiLoader) poll(api Repository, label string) ?TuiLoad {
 		loader.pending[i] = false
 		if loader.again[i] {
 			loader.again[i] = false
-			loader.request(api, label, result.kind, false)
+			loader.request(api, result.kind, false)
 			continue
-		}
-		if result.kind == .issues && result.error == '' {
-			// Schedule one page at a time so new labels supersede a download
-			// without waiting for the rest of the repository's history.
-			loader.issue_rows << result.rows
-			result.rows = loader.issue_rows.clone()
-			if result.more {
-				loader.pending[i] = true
-				loader.issue_page++
-				spawn tui_load(api, label, .issues, loader.issue_page, loader.results)
-			}
 		}
 		return result
 	}
@@ -203,8 +181,8 @@ fn (api Repository) tui_states(view int) []string {
 	if view == 0 { return api.states() }
 	if view == 1 { return ['all'] }
 	if view == 4 { return report_states }
-	if api.provider == 'github' { return ['all', 'open', 'closed'] }
-	return if view == 3 { ['all', 'opened', 'closed', 'merged'] } else { ['all', 'opened', 'closed'] }
+	if api.provider == 'github' { return ['open', 'closed', 'all'] }
+	return if view == 3 { ['opened', 'closed', 'merged', 'all'] } else { ['opened', 'closed', 'all'] }
 }
 
 // Search/link work is tied to data changes. Row formatting is lazy and cached at

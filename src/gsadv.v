@@ -33,6 +33,9 @@ const help = 'Usage: gsadv [-r namespace/repo|url] [--provider github|gitlab] [-
   review <id|commit|url> [context] review an advisory or source with AI, then edit
   pr-review <PR URL|number> [context] draft a comment helping the contributor merge it
   comment <issue|PR URL> [text] edit a discussion comment, then confirm posting
+  issue-fix <issue URL|number> [context] implement the issue in the local checkout
+  issue-review <issue URL|number> [context] investigate requirements and draft a comment
+  issue-related <issue URL|number> [context] find related issues and draft cross-references
   similar <id|commit|url> [context] find similar bugs using the selection as a template
   fix <REPORT.md> [context] ask the AI to fix the reported bug and commit it locally
   quickfix <REPORT.md> [context] review and apply the suggested patch without builds or tests
@@ -55,7 +58,7 @@ Environment:
   GSADV_ADVISORY_LABEL  GitLab disclosure label (default: security-advisory)
   GSADV_REPO   default repository (otherwise taken from the cwd checkout)
   GSADV_GREP   git log -E --grep (default: ##(crash|security|vuln|sandbox); empty: all commits)
-  GSADV_LABEL  issues/PRs label (default: cve; empty: all labels; includes open and closed items)
+  GSADV_LABEL  issues/PRs label (default: cve; empty: all labels)
   --label and --grep override these settings; use an empty value to disable a filter.
   Per-repository defaults: git config --local gsadv.label security; git config --local gsadv.grep fix
   Per-project settings: .gsadv.ini at the checkout root (key=value; press , in the TUI)
@@ -138,7 +141,7 @@ fn main() {
 		tui(GitHub{}, issue_label(args))
 		return
 	}
-	input := if cmd in ['new', 'review', 'pr-review', 'comment', 'similar', 'invalid', 'unmark'] { id } else { '' }
+	input := if cmd in ['new', 'review', 'pr-review', 'comment', 'similar', 'invalid', 'unmark', 'issue-fix', 'issue-review', 'issue-related'] { id } else { '' }
 	api := configured_repository(input) or {
 		eprintln('cannot select repository: ${err}')
 		exit(1)
@@ -236,6 +239,9 @@ fn main() {
 			cmd_comment(api, id, ctx) or {
 				die(err)
 			}
+		}
+		'issue-fix', 'issue-review', 'issue-related' {
+			cmd_issue_workflow(api, cmd, id, ctx) or { die(err) }
 		}
 		'similar' {
 			cmd_similar(api, id, ctx) or {

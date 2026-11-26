@@ -81,8 +81,12 @@ def checks(binary, root):
     assert not state.exists(), 'reads must not create state directories'
 
     # A cancelled TUI action creates no receipt; a successful one survives exit.
-    with Terminal(binary, root, 'tui', env) as ui:
+    with Terminal(binary, root, 'tui', env, size=(145, 24)) as ui:
+        ui.expect('GHSA-test | published')
+        ui.send('a')
         ui.expect('c request CVE')
+        ui.send('\x1b')
+        ui.expect('GHSA-test | published')
         ui.send('c')
         ui.expect('request a CVE for GHSA-test?')
         ui.send('n')
@@ -107,21 +111,21 @@ def checks(binary, root):
     status = run('status')
     assert stamp in status and 'recorded locally' in status and 'no CVE assigned' in status
     listing = run('ls')
-    assert 'requested*' in listing.splitlines()[0]
-    assert 'requested*' not in listing.splitlines()[1]
+    assert 'requested*' in next(line for line in listing.splitlines() if 'GHSA-test' in line)
+    assert 'requested*' not in next(line for line in listing.splitlines() if 'GHSA-other' in line)
     assert 'request status unknown' in run('status', 'GHSA-other')
 
-    with Terminal(binary, root, 'tui', env) as ui:
+    with Terminal(binary, root, 'tui', env, size=(145, 24)) as ui:
         screen = ui.expect('requested*')
         assert 'requested*' in screen and 'c request CVE' not in screen
         ui.send('c')
         ui.expect('CVE request already recorded locally')
         assert len(requests()) == 1
-        ui.send('g')
-        ui.expect('CVE request recorded locally; g reload, s status')
+        ui.send('\x12')
+        ui.expect('CVE request recorded locally. Ctrl+R reload, s status')
         # A newly assigned ID replaces the receipt, including action hints.
         (root / 'assigned').write_text('CVE-2026-12345')
-        ui.send('g')
+        ui.send('\x12')
         screen = ui.expect('CVE-2026-12345')
         assert 'CVE-2026-12345' in screen and 'requested*' not in screen
         ui.send('c')

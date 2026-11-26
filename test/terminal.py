@@ -131,13 +131,19 @@ def checks(binary, root):
 
         # A reload of unchanged data does not clear or repaint the screen.
         calls = len((root / 'calls').read_text().splitlines())
-        ui.send('g')
+        ui.send('\x12')
         deadline = time.monotonic() + 5
         while len((root / 'calls').read_text().splitlines()) < calls + 3:
             assert time.monotonic() < deadline
             ui.read(0.1)
         ui.read(0.3)
         assert ui.buffer == '', repr(ui.buffer)
+
+        for shortcut, selected in [('G', 29), ('g', 0)]:
+            ui.send(shortcut)
+            ui.expect(f'GHSA-test-{selected:02} | draft')
+            frame(ui, screen)
+            assert any(f'{selected:02} Vulnerability' in row for row in screen.rows), screen.rows
 
         # Scrolling beyond either end stops at the first/last entry.
         ui.send('JJJJ')

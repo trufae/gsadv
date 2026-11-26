@@ -16,6 +16,9 @@ const prompt_source_review = $embed_file('prompts/source_review.txt').to_string(
 const prompt_similar = $embed_file('prompts/similar.txt').to_string().trim_right('\n')
 const prompt_fix = $embed_file('prompts/fix.txt').to_string().trim_right('\n')
 const prompt_pr_review = $embed_file('prompts/pr_review.txt').to_string().trim_right('\n')
+const prompt_issue_fix = $embed_file('prompts/issue_fix.txt').to_string().trim_right('\n')
+const prompt_issue_review = $embed_file('prompts/issue_review.txt').to_string().trim_right('\n')
+const prompt_issue_related = $embed_file('prompts/issue_related.txt').to_string().trim_right('\n')
 const prompt_quickfix = $embed_file('prompts/quickfix.txt').to_string().trim_right('\n')
 const prompt_continue = $embed_file('prompts/continue.txt').to_string().trim_right('\n')
 
@@ -92,7 +95,8 @@ fn cmd_continue(id string) ! {
 
 fn continue_edit(dir string, run_ai bool, resume string) ! {
 	session := json2.decode[EditSession](os.read_file(os.join_path(dir, 'session.json'))!)!
-	if session.kind !in ['new', 'review', 'edit', 'similar', 'source-review', 'pr-review', 'comment', 'fix', 'quickfix'] || session.repo == ''
+	if session.kind !in ['new', 'review', 'edit', 'similar', 'source-review', 'pr-review', 'comment', 'fix', 'quickfix',
+		'issue-fix', 'issue-review', 'issue-related'] || session.repo == ''
 		|| (session.kind != 'new' && session.id == '') {
 		return error('invalid recovery session: ${dir}')
 	}
@@ -102,10 +106,12 @@ fn continue_edit(dir string, run_ai bool, resume string) ! {
 	defer {
 		os.signal_opt(.int, previous) or {}
 	}
-	if session.kind in ['source-review', 'pr-review', 'comment'] {
+	if session.kind in ['source-review', 'pr-review', 'issue-review', 'comment'] {
 		resume_comment(dir, session, run_ai, resume)!
 		return
 	}
+	if session.kind == 'issue-fix' { return resume_issue_fix(dir, session, run_ai, resume) }
+	if session.kind == 'issue-related' { return resume_related_issues(dir, session, run_ai, resume) }
 	fix := session.kind in ['fix', 'quickfix']
 	if fix || session.kind == 'similar' {
 		if run_ai {
@@ -1089,7 +1095,7 @@ fn resume_comment(dir string, session EditSession, run_ai bool, resume string) !
 	if os.exists(receipt) { println('Comment already posted: ${os.read_file(receipt)!}'); return }
 	path := os.join_path(dir, 'edit.md')
 	if !os.exists(path) {
-		if session.kind in ['source-review', 'pr-review'] && run_ai {
+		if session.kind != 'comment' && run_ai {
 			ask_ai(dir, false, false, '', '', resume) or { return ai_error(dir, err.msg()) }
 		}
 		name := if session.kind == 'comment' { 'original.md' } else { 'reply.txt' }
