@@ -4,6 +4,7 @@ import crypto.sha256
 import json2
 import os
 import rand
+import time
 
 fn (api Repository) issue_query(label string, view int, filter int) IssueQuery {
 	kind := if api.provider == 'github' { IssueKind.mixed } else if view == 2 { IssueKind.issues } else { IssueKind.pulls }
@@ -50,6 +51,7 @@ struct TuiIssueList {
 	query IssueQuery
 mut:
 	page int = 1
+	started time.Time = time.now()
 	done bool
 	retain bool
 	rows [][]string
@@ -89,6 +91,7 @@ fn (mut loader TuiSourceLoader) request(api Repository, label string, filters []
 		}
 		if reload && list.done {
 			list.page, list.done = 1, false
+			list.started = time.now()
 			list.retain = list.retain || list.rows.len > 0
 		}
 		lists << list
@@ -137,6 +140,7 @@ fn (mut loader TuiSourceLoader) poll(api Repository) string {
 				}
 				if result.more {
 					list.page++
+					list.started = time.now()
 					continue
 				}
 				list.retain = true

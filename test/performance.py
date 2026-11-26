@@ -24,6 +24,8 @@ args = sys.argv[1:]
 if Path(sys.argv[0]).name == 'git':
     if args[:2] == ['remote', 'get-url']:
         kind = 'repository'
+    elif args == ['config', '--get', 'gsadv.attic']:
+        kind = 'attic'
     elif args == ['remote']:
         print('origin')
         sys.exit(0)
@@ -62,6 +64,7 @@ def setup(root):
         (root / name).write_text(STUB)
         (root / name).chmod(0o700)
     (root / 'repository').write_text('https://github.com/owner/repo\n')
+    (root / 'attic').write_text('Attic\n')
     (root / 'git-status').write_text('')
     (root / 'status').write_text('advisory status loaded\n')
     (root / 'advisories').write_text(''.join(
@@ -126,7 +129,7 @@ def background(binary, root):
     with Terminal(binary, root, 'tui', size=(160, 30), repo=None, extra_env={'GSADV_REPO': ''}) as ui:
         wait_for(ui, lambda: 'Loading...' in ui.buffer, timeout=1)
         print(f'First screen with blocked repository/GitHub/Git: {(time.monotonic()-start)*1000:.2f} ms')
-        ui.send('\t')
+        ui.send('Hl')
         ui.expect('[commits 2000]')
         ui.send('j')
         selected(ui, 1)
@@ -212,6 +215,38 @@ def repository_failure(binary, root):
         ui.finish()
 
 
+def reports_progress(binary, root):
+    reports = root / 'ANTFIND'
+    finding = reports / 'finding'
+    finding.mkdir(parents=True)
+    (finding / 'REPORT.md').write_text('# Local report fixture\n')
+    os.mkfifo(reports / 'REPORT.md')
+    os.mkfifo(finding / 'RESULT.md')
+    os.mkfifo(finding / 'WIP.txt')
+    hold = root / 'hold-attic'
+    hold.touch()
+    try:
+        with Terminal(binary, root, 'tui', size=(160, 30)) as ui:
+            ui.expect('Reading report settings (0s)')
+            ui.expect('Reading report settings (1s)')
+            ui.expect('advisories 500 (all)')
+            ui.send('Hl')
+            ui.expect('[commits 2000]')
+            ui.send('j')
+            selected(ui, 1)
+            ui.send('L')
+            ui.expect('[Reports 0 (all) loading...]')
+            hold.unlink()
+            ui.expect('[Reports 1 (all)]')
+            ui.expect('Local report fixture')
+            ui.send('\r')
+            ui.expect('Preview finding')
+            ui.send('qq')
+            ui.finish()
+    finally:
+        hold.unlink(missing_ok=True)
+
+
 if __name__ == '__main__':
     binary = str(Path(sys.argv[1]).resolve())
     with tempfile.TemporaryDirectory(prefix='gsadv-performance-') as tmp:
@@ -224,4 +259,8 @@ if __name__ == '__main__':
             setup(root)
             background(binary, root)
             repository_failure(binary, root)
-        print('Background loading, reload, status, action and quit checks passed')
+        with tempfile.TemporaryDirectory(prefix='gsadv-report-progress-') as tmp:
+            root = Path(tmp)
+            setup(root)
+            reports_progress(binary, root)
+        print('Background loading, report progress, reload, status, action and quit checks passed')

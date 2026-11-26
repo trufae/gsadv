@@ -6,6 +6,7 @@ import time
 // Rows are [path, severity, type, id, title, location, cwe, group, date, state, similar].
 // state contains the activity, verdict, and advisory labels that apply;
 // similar is set when a similar-bugs search saved SIMILAR.md there.
+// Offloaded reports have an extra field until their contents are available.
 // Findings start with a fenced header:
 //   ANT-2026-XXXXXXXX  [high]  CWE-416  memory-safety
 //   Title
@@ -151,18 +152,78 @@ fn parse_report(text string) []string {
 	return [severity, if typ == '' { '-' } else { typ }, id, title, location, cwe]
 }
 
-fn walk_reports(base string, dir string, attic string, mut paths []string) {
+type ReportProgress = fn (int, [][]string) bool
+
+struct ReportScan {
+	base string
+	attic string
+	progress ?ReportProgress
+mut:
+	rows [][]string
+	dirs int
+	published int
+	last_update time.Time
+}
+
+fn (mut scan ReportScan) publish(first_report bool) {
+	if progress := scan.progress {
+		if !first_report && time.since(scan.last_update) < 200 * time.millisecond { return }
+		if progress(scan.dirs, scan.rows[scan.published..].clone()) {
+			scan.published = scan.rows.len
+		}
+		scan.last_update = time.now()
+	}
+}
+
+fn (mut scan ReportScan) walk(dir string) {
+	scan.dirs++
+	scan.publish(false)
 	for name in os.ls(dir) or { return } {
 		path := os.join_path(dir, name)
-		if os.is_dir(path) {
+		info := os.stat(path) or { continue }
+		kind := info.get_filetype()
+		if kind == .directory {
 			// Symlinked directories could loop; the attic matches a name or a path below base.
 			if os.is_link(path) { continue }
-			if attic != '' && (name == attic || path[base.len + 1..] == attic) { continue }
-			walk_reports(base, path, attic, mut paths)
-		} else if name == 'REPORT.md' {
-			paths << path
+			if scan.attic != '' && (name == scan.attic || path.trim_string_left(scan.base).trim_left('/') == scan.attic) { continue }
+			scan.walk(path)
+		} else if name == 'REPORT.md' && kind == .regular {
+			// The group is the directory above the finding's own, e.g. wave1.
+			rel := os.dir(path).trim_string_left(scan.base).trim_left('/')
+			group := if rel.contains('/') { os.dir(rel) } else { '.' }
+			mut entry := [path, '-', '-', os.file_name(os.dir(path)), '', '', '', group,
+				time.unix(info.mtime).local().ymmdd(), report_state(path),
+				if os.exists(similar_path(path)) { 'similar' } else { '' }]
+			if report_file_offloaded(path) {
+				entry << 'offloaded'
+			} else {
+				entry = report_with_contents(entry, os.read_file(path) or { '' })
+			}
+			scan.rows << entry
+			scan.publish(scan.rows.len == 1)
 		}
 	}
+}
+
+fn report_file_offloaded(path string) bool {
+	$if macos {
+		// SF_DATALESS from <sys/stat.h> is hidden in the compiler's POSIX mode.
+		flag := u32(0x40000000)
+		mut info := C.stat{}
+		return unsafe { C.stat(&char(path.str), &info) } == 0 && (info.st_flags & flag) != 0
+	} $else {
+		return false
+	}
+}
+
+fn report_offloaded(entry []string) bool {
+	return entry.len > 11 && entry[11] == 'offloaded'
+}
+
+fn report_with_contents(entry []string, text string) []string {
+	r := parse_report(text)
+	id := if r[2] != '' { r[2] } else { entry[3] }
+	return [entry[0], r[0], r[1], id, r[3], r[4], r[5], entry[7], entry[8], entry[9], entry[10]]
 }
 
 fn report_rank(severity string) int {
@@ -177,26 +238,21 @@ fn report_rank(severity string) int {
 }
 
 // Most severe first, then by path.
-fn find_reports(base string, attic string) [][]string {
-	mut paths := []string{}
-	if os.is_dir(base) { walk_reports(base, base, attic.trim('/'), mut paths) }
-	mut rows := [][]string{}
-	for path in paths {
-		r := parse_report(os.read_file(path) or { '' })
-		// The group is the directory above the finding's own, e.g. wave1.
-		rel := os.dir(path)[base.len..].trim_left('/')
-		group := if rel.contains('/') { os.dir(rel) } else { '.' }
-		id := if r[2] != '' { r[2] } else { os.file_name(os.dir(path)) }
-		rows << [path, r[0], r[1], id, r[3], r[4], r[5], group,
-			time.unix(os.file_last_mod_unix(path)).local().ymmdd(), report_state(path),
-			if os.exists(similar_path(path)) { 'similar' } else { '' }]
-	}
+fn sort_reports(mut rows [][]string) {
 	rows.sort_with_compare(fn (a &[]string, b &[]string) int {
 		ra, rb := report_rank((*a)[1]), report_rank((*b)[1])
 		if ra != rb { return ra - rb }
 		return compare_strings((*a)[0], (*b)[0])
 	})
-	return rows
+}
+
+fn find_reports(base string, attic string, progress ...ReportProgress) [][]string {
+	if !os.is_dir(base) { return [][]string{} }
+	mut scan := ReportScan{base: os.norm_path(base), attic: attic.trim('/'),
+		progress: if progress.len > 0 { ?ReportProgress(progress[0]) } else { none }, last_update: time.now()}
+	scan.walk(scan.base)
+	sort_reports(mut scan.rows)
+	return scan.rows
 }
 
 fn is_report(path string) bool {
@@ -244,7 +300,9 @@ fn wip_alive(path string) bool {
 fn report_state(report string) string {
 	mut labels := []string{cap: 3}
 	wip := wip_path(report)
-	if os.exists(wip) { labels << if wip_alive(wip) { 'working' } else { 'stopped' } }
+	if regular_report_file(wip) && !report_file_offloaded(wip) {
+		labels << if wip_alive(wip) { 'working' } else { 'stopped' }
+	}
 	result := report_result(report)
 	if result != '' { labels << result }
 	if os.is_file(advisory_path(report)) { labels << 'advisory' }
@@ -354,7 +412,10 @@ fn result_path(report string) string {
 
 // Short label for the verdict in RESULT.md; empty when no fix has run.
 fn report_result(report string) string {
-	text := os.read_file(result_path(report)) or { return '' }
+	path := result_path(report)
+	if !regular_report_file(path) { return '' }
+	if report_file_offloaded(path) { return 'done' }
+	text := os.read_file(path) or { return '' }
 	verdict, _ := fix_verdict(text)
 	return match verdict {
 		'confirmed' { 'confirmed' }
@@ -363,6 +424,11 @@ fn report_result(report string) string {
 		'inconclusive' { 'unclear' }
 		else { 'done' }
 	}
+}
+
+fn regular_report_file(path string) bool {
+	info := os.stat(path) or { return false }
+	return info.get_filetype() == .regular
 }
 
 fn report_state_cell(labels string, invalid bool) string {
@@ -383,6 +449,7 @@ fn report_state_cell(labels string, invalid bool) string {
 }
 
 fn report_hint(report []string) string {
+	if report_offloaded(report) { return '${report[3]} | Offloaded by macOS. Enter downloads and previews it.' }
 	if report.len < 11 || (report[9] == '' && report[10] == '') {
 		return '${report[3]} | ${report[1]} | ${report[6]} | ${report[5]} | ${report[0]}'
 	}
@@ -417,15 +484,18 @@ fn report_columns(w int) string {
 
 fn report_row(r []string, w int, invalid bool) string {
 	if r.len < 10 { return clip_line(r.join(' '), line_width(w)) }
+	title := if report_offloaded(r) {
+		if w < 90 { '${r[3]} (offloaded)' } else { 'Offloaded by macOS' }
+	} else { r[4] }
 	labels := if r.len > 10 { '${r[9]} ${r[10]}' } else { r[9] }
 	state := report_state_cell(labels, invalid)
 	icon := if r[1] == 'bug' { '⚫' } else { severity_icon(r[1]) }
-	line := if w < 60 { r[4] } else if w < 90 {
-		'${icon} ${r[2]:-14} ${state} ${r[4]}'
+	line := if w < 60 { title } else if w < 90 {
+		'${icon} ${r[2]:-14} ${state} ${title}'
 	} else if w < 130 {
-		'${icon} ${r[3]:-18} ${r[2]:-14} ${state} ${r[4]}'
+		'${icon} ${r[3]:-18} ${r[2]:-14} ${state} ${title}'
 	} else {
-		'${icon} ${r[3]:-18} ${r[2]:-14} ${state} ${r[6]:-9} ${table_cell(r[7], 24)} ${r[4]}'
+		'${icon} ${r[3]:-18} ${r[2]:-14} ${state} ${r[6]:-9} ${table_cell(r[7], 24)} ${title}'
 	}
 	return clip_line(line, line_width(w))
 }

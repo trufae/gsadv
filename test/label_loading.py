@@ -114,7 +114,7 @@ def checks(binary, root, provider, scenario):
         set_label(ui, '')
         if scenario == 'late-pull':
             screen = ui.expect(f'[{title} 0 ({state}) loading...]')
-            ui.expect('Loading... You can switch tabs or quit while requests run.')
+            ui.expect(f'Loading... Fetching {title} | page 1')
             assert 'No entries.' not in screen
             wait_for_page(ui, root, 2)
             ui.send('\x1b[Z')

@@ -954,9 +954,10 @@ fn credits_tui(api Repository, id string) ! {
 	}
 }
 
-fn tui(initial_api Repository, initial_label string) {
-	mut api := initial_api
-	mut label := initial_label
+fn tui(label_override ?string) {
+	mut api := Repository(GitHub{})
+	mut label := label_override or { '' }
+	mut label_known := label_override != none
 	saved := os.exec(['stty', '-g']).output.trim_space()
 	raw := fn () {
 		os.system_args(['stty', '-icanon', '-echo', '-isig', 'min', '0', 'time', '1'])
@@ -974,6 +975,8 @@ fn tui(initial_api Repository, initial_label string) {
 	mut prs := [][]string{}
 	mut reports := [][]string{}
 	mut reports_dir := ''
+	mut report_dirs := 0
+	mut report_revision := 0
 	mut git_status := 'loading...'
 	mut loader := TuiLoader{}
 	mut sources := TuiSourceLoader{}
@@ -984,7 +987,8 @@ fn tui(initial_api Repository, initial_label string) {
 	mut lists := []TuiList{len: 5}
 	mut changed := [true, true, true, true, true]
 	mut links := AdvisoryLinks{}
-	mut view := 0 // 0 advisories, 1 git, 2 issues, 3 PRs/MRs, 4 reports
+	mut view := 4 // 0 advisories, 1 git, 2 issues, 3 PRs/MRs, 4 reports
+	mut view_chosen := false
 	mut sel := [0, 0, 0, 0, 0]
 	mut top := [0, 0, 0, 0, 0]
 	mut status := ''
@@ -992,26 +996,22 @@ fn tui(initial_api Repository, initial_label string) {
 	mut marks_stamp := ''
 	mut marks_checked := time.now()
 	mut states_checked := time.now()
-	if api.repo != '' {
-		marks = api.marks() or { status = 'local marks: ${err}'; map[string]Mark{} }
-		marks_stamp = api.marks_stamp()
-	}
 	mut state_filters := [0, 0, 0, 0, 0]
 	mut queries := ['', '', '', '', '']
-	mut grep := commit_grep()
+	mut grep := ''
 	mut screen := TuiScreen{}
 	mut preview := TuiPreview{}
 	raw()
+	loader.request(api, .reports, false)
 	loader.request(api, .commits, false)
 	loader.request(api, .git_status, false)
-	loader.request(api, .reports, false)
-	if api.repo == '' {
-		loader.request(api, .repository, false)
-	} else {
-		loader.request(api, .advisories, false)
-		sources.request(api, label, state_filters, false)
-	}
+	loader.request(api, .repository, false)
+	if !label_known { loader.request(api, .issue_label, false) }
 	for {
+		mut reports_reordered := false
+		previous_report := if index := lists[4].visible[sel[4]] {
+			if entry := reports[index] { entry[0] } else { '' }
+		} else { '' }
 		mut completed := TuiActionResult{}
 		if action_results.try_pop(mut completed) == .success {
 			pending_action = ''
@@ -1045,14 +1045,14 @@ fn tui(initial_api Repository, initial_label string) {
 			}
 			match result.kind {
 				.repository {
-					if result.error == '' && result.text != '' {
+					if result.error == '' {
 						api = result.repository
 						state_filters[0], state_filters[2], state_filters[3] = 0, 0, 0
+						loader.request(api, .advisories, false)
+						if label_known { sources.request(api, label, state_filters, false) }
 						marks = api.marks() or { status = 'local marks: ${err}'; map[string]Mark{} }
 						marks_stamp = api.marks_stamp()
 						changed = [true, true, true, true, true]
-						loader.request(api, .advisories, false)
-						sources.request(api, label, state_filters, false)
 					}
 				}
 				.advisories {
@@ -1067,6 +1067,7 @@ fn tui(initial_api Repository, initial_label string) {
 					loaded[0] = true
 				}
 				.commits {
+					grep = result.text
 					if result.error == '' && result.rows != cms {
 						cms, changed[1] = result.rows, true
 					} else if result.error != '' && !loaded[1] {
@@ -1077,8 +1078,41 @@ fn tui(initial_api Repository, initial_label string) {
 				.git_status { git_status = result.text }
 				.reports {
 					reports_dir = result.text
-					if result.rows != reports { reports, changed[4] = result.rows, true }
+					if result.partial {
+						report_dirs = result.dirs
+						if !loaded[4] && result.rows.len > 0 {
+							reports << result.rows
+							sort_reports(mut reports)
+							changed[4], reports_reordered = true, true
+						}
+						continue
+					}
+					if result.rows != reports {
+						reports, changed[4], reports_reordered = result.rows, true, true
+					}
+					if !loaded[4] && !view_chosen && reports.len == 0 { view = 0 }
 					loaded[4] = true
+					report_dirs = 0
+					report_revision++
+					states_checked = time.now()
+				}
+				.report_states {
+					if result.report_revision == report_revision {
+						mut resort := false
+						for index, entry in result.report_updates {
+							resort = resort || reports[index][1] != entry[1]
+							reports[index] = entry
+							changed[4] = true
+						}
+						if resort {
+							sort_reports(mut reports)
+							reports_reordered = true
+						}
+					}
+				}
+				.issue_label {
+					if !label_known { label, label_known = result.text, true }
+					if api.repo != '' { sources.request(api, label, state_filters, false) }
 				}
 			}
 		}
@@ -1099,27 +1133,21 @@ fn tui(initial_api Repository, initial_label string) {
 			}
 		}
 		// Other gsadv processes share the marks; pick up their changes.
-		if api.repo != '' && time.since(marks_checked) >= time.second {
+		if time.since(marks_checked) >= time.second {
 			marks_checked = time.now()
-			stamp := api.marks_stamp()
-			if stamp != marks_stamp {
-				marks_stamp = stamp
-				marks = api.marks() or { status = 'local marks: ${err}'; marks.clone() }
-				changed = [true, true, true, true, true]
+			if api.repo != '' {
+				stamp := api.marks_stamp()
+				if stamp != marks_stamp {
+					marks_stamp = stamp
+					marks = api.marks() or { status = 'local marks: ${err}'; marks.clone() }
+					changed = [true, true, true, true, true]
+				}
 			}
 		}
 		// Fix runs, here or in other terminals, change a report's state.
-		if view == 4 && time.since(states_checked) >= time.second {
+		if view == 4 && loaded[4] && time.since(states_checked) >= time.second {
 			states_checked = time.now()
-			for mut r in reports {
-				if r.len >= 10 {
-					state := report_state(r[0])
-					if state != r[9] {
-						r[9] = state
-						changed[4] = true
-					}
-				}
-			}
+			loader.request_report_states(reports, report_revision)
 		}
 		filters := api.tui_states(view)
 		w, h := terminal_size()
@@ -1137,6 +1165,14 @@ fn tui(initial_api Repository, initial_label string) {
 			lists[v].filter(entries, queries[v], api.tui_states(v)[state_filters[v]])
 		}
 		visible := lists.map(it.visible)
+		if reports_reordered && view_chosen && previous_report != '' {
+			for i, index in visible[4] {
+				if reports[index][0] == previous_report {
+					sel[4] = i
+					break
+				}
+			}
+		}
 		advisory_matches := lists[0].matches
 		page := layout.page
 		n := visible[view].len
@@ -1162,10 +1198,10 @@ fn tui(initial_api Repository, initial_label string) {
 		id := if ai >= 0 && ai < advs.len && advs[ai].len >= 5 { advs[ai][0] } else { '' }
 		target := if input != '' { input } else { id }
 		report := if view == 4 && selected >= 0 && reports[selected].len >= 9 { reports[selected] } else { []string{} }
-		mark_target := if report.len > 0 { 'report:' + report[3] } else { target }
-		mark_name := if report.len > 0 { report[3] } else { target }
-		current := if view == 4 { marks[mark_key(report, 4)] or { Mark{} } } else { marks[invalid_key(target)] or { Mark{} } }
-		reason := if current.kind == 'invalid' { current.reason } else { '' }
+		mut mark_target := if report.len > 0 { 'report:' + report[3] } else { target }
+		mut mark_name := if report.len > 0 { report[3] } else { target }
+		mut current := if view == 4 { marks[mark_key(report, 4)] or { Mark{} } } else { marks[invalid_key(target)] or { Mark{} } }
+		mut reason := if current.kind == 'invalid' { current.reason } else { '' }
 		actions := if id != '' {
 			api.actions(advs[ai])
 		} else {
@@ -1176,12 +1212,38 @@ fn tui(initial_api Repository, initial_label string) {
 		mut tabs := ['${records_title} ${visible[0].len} (${lists[0].state})', 'commits ${visible[1].len}',
 			'issues ${visible[2].len} (${lists[2].state})', '${prs_title} ${visible[3].len} (${lists[3].state})',
 			'Reports ${visible[4].len} (${lists[4].state})']
-		repo_pending := loader.pending[int(TuiLoadKind.repository)]
+		repo_pending := loader.running(.repository)
 		for v in 0 .. tabs.len {
 			if !loaded[v] { tabs[v] += if v !in [1, 4] && api.repo == '' && !repo_pending { ' unavailable' } else { ' loading...' } }
 		}
-		repo_name := if api.repo != '' { api.repo } else if repo_pending { 'resolving repository...' } else { 'repository unavailable' }
-		header := 'gsadv ${api.provider}:${api.host}/${repo_name} | local git: ${git_status}'
+		repo_name := if api.repo != '' { '${api.provider}:${api.host}/${api.repo}' } else if repo_pending {
+			'Detecting Git repository (${loader.seconds(.repository)}s)'
+		} else { 'repository unavailable' }
+		git_summary := if loader.running(.git_status) && (git_status == 'loading...' || loader.seconds(.git_status) > 0) {
+			'checking status (${loader.seconds(.git_status)}s)'
+		} else { git_status }
+		header := 'gsadv | ${repo_name} | local git: ${git_summary}'
+		mut loading := ''
+		if view == 4 && loader.running(.reports) {
+			loading = if reports_dir == '' { 'Reading report settings' } else { 'Scanning local reports | ${report_dirs} folders checked' }
+			loading += ' (${loader.seconds(.reports)}s)'
+		} else if view == 1 && loader.running(.commits) {
+			loading = 'Reading Git history (${loader.seconds(.commits)}s)'
+		} else if view !in [1, 4] && repo_pending {
+			loading = repo_name
+		} else if view == 0 && loader.running(.advisories) {
+			loading = 'Fetching ${records_title} and release status (${loader.seconds(.advisories)}s)'
+		} else if view in [2, 3] && api.repo != '' {
+			if loader.running(.issue_label) && !label_known {
+				loading = 'Reading the issue label (${loader.seconds(.issue_label)}s)'
+			} else if list := sources.list(api.issue_query(label, view, state_filters[view])) {
+				if !list.done {
+					name := if view == 2 { 'issues' } else { prs_title }
+					elapsed := time.since(list.started).milliseconds() / 1000
+					loading = 'Fetching ${name} | page ${list.page} (${elapsed}s)'
+				}
+			}
+		}
 		tab_line := tui_tabs(tabs, view, width)
 		columns := if view == 0 {
 			advisory_columns(w)
@@ -1204,6 +1266,8 @@ fn tui(initial_api Repository, initial_label string) {
 		if n == 0 {
 			body << term.dim(if !loaded[view] && view !in [1, 4] && api.repo == '' && !repo_pending {
 				'Cannot find repository. Use -r owner/repo or GSADV_REPO. Ctrl+R retries.'
+			} else if loading != '' {
+				'Loading... ${loading}'
 			} else if !loaded[view] {
 				'Loading... You can switch tabs or quit while requests run.'
 			} else if queries[view] != '' {
@@ -1225,6 +1289,10 @@ fn tui(initial_api Repository, initial_label string) {
 			'Updating ${pending_action}... You can keep browsing; other changes and quitting wait for completion.'
 		} else if status != '' {
 			status
+		} else if loading != '' && n == 0 {
+			'Tab switches views, q quits'
+		} else if view == 4 && loading != '' && (!loaded[4] || loader.seconds(.reports) > 0) {
+			loading
 		} else if report.len > 0 {
 			report_hint(report)
 		} else if id != '' {
@@ -1235,6 +1303,8 @@ fn tui(initial_api Repository, initial_label string) {
 			}
 			visibility := if advs[ai].len > 7 && advs[ai][7] != '' { advs[ai][7] + ' | ' } else { '' }
 			if view == 0 { release_hint(advs[ai]) + ' | ' } else { '' } + '${id} | ${advs[ai][1]} | ${visibility}${cve}'
+		} else if !loaded[view] && loading != '' {
+			loading
 		} else {
 			'No advisory selected; N writes a draft manually; n drafts from a commit, issue or PR'
 		}
@@ -1272,6 +1342,7 @@ fn tui(initial_api Repository, initial_label string) {
 			if k != '' || nw != w || nh != h || time.since(marks_checked) >= time.second { break }
 		}
 		if k == '' { continue }
+		view_chosen = true
 		if split {
 			if !preview.doc.entering && k in ['n', 'p'] {
 				step := if k == 'n' { 1 } else { -1 }
@@ -1335,6 +1406,14 @@ fn tui(initial_api Repository, initial_label string) {
 					continue
 				}
 			}
+		}
+		if api.repo != '' && k in ['m', 'i', 'I'] && report_offloaded(report) {
+			screen.width = 0
+			downloaded := tui_download_report(api, report) or { status = err.msg(); continue }
+			mark_name = downloaded[3]
+			mark_target = 'report:' + mark_name
+			current = marks[mark_key(downloaded, 4)] or { Mark{} }
+			reason = if current.kind == 'invalid' { current.reason } else { '' }
 		}
 		if k == 'm' {
 			if api.repo == '' || mark_target == '' {
@@ -1501,7 +1580,7 @@ fn tui(initial_api Repository, initial_label string) {
 				step := if k == 'f' { 1 } else { filters.len - 1 }
 				state_filters[view] = (state_filters[view] + step) % filters.len
 				sel[view], top[view] = 0, 0
-				if view in [2, 3] && api.repo != '' { sources.request(api, label, state_filters, false) }
+				if view in [2, 3] && api.repo != '' && label_known { sources.request(api, label, state_filters, false) }
 			}
 			'/' {
 				screen.width = 0
@@ -1513,6 +1592,10 @@ fn tui(initial_api Repository, initial_label string) {
 			}
 			',' {
 				screen.width = 0
+				if !loaded[1] { grep = commit_grep() }
+				if !label_known {
+					label, label_known = project_setting('label'), true
+				}
 				mut live := {
 					'grep':  grep
 					'label': label
@@ -1535,6 +1618,8 @@ fn tui(initial_api Repository, initial_label string) {
 				}
 				if 'antfind' in updated || 'attic' in updated {
 					reports, loaded[4], changed[4] = [][]string{}, false, true
+					reports_dir, report_dirs = '', 0
+					report_revision++
 					sel[4], top[4] = 0, 0
 					loader.request(api, .reports, true)
 				}
@@ -1546,6 +1631,7 @@ fn tui(initial_api Repository, initial_label string) {
 				status = 'agent: ${os.getenv('GSADV_AI')}'
 			}
 			'\x12' {
+				loader.request(api, .reports, false)
 				if api.repo != '' {
 					marks = api.marks() or { status = 'local marks: ${err}'; marks.clone() }
 					marks_stamp = api.marks_stamp()
@@ -1553,12 +1639,11 @@ fn tui(initial_api Repository, initial_label string) {
 				}
 				loader.request(api, .commits, false)
 				loader.request(api, .git_status, false)
-				loader.request(api, .reports, false)
 				if api.repo == '' {
 					loader.request(api, .repository, false)
 				} else {
 					loader.request(api, .advisories, false)
-					sources.request(api, label, state_filters, true)
+					if label_known { sources.request(api, label, state_filters, true) }
 				}
 			}
 			'i', 'I' {

@@ -68,7 +68,10 @@ fn commit_grep() string {
 // Matching commits in the cwd checkout: sha, date, subject and the ADVISORY.md of the
 // finding the message references (ANT-...), or ''.
 fn commits() ![][]string {
-	grep := commit_grep()
+	return matching_commits(commit_grep())
+}
+
+fn matching_commits(grep string) ![][]string {
 	mut args := ['git', 'log', '-z', '-n', '2000', '--format=%H%x09%as%x09%s%x09%b']
 	if grep != '' { args << ['-E', '--grep=${grep}'] }
 	r := os.exec(args)

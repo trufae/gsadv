@@ -51,6 +51,14 @@ fn test_find_reports_skips_attic() {
 	assert find_reports(base, '').len == 3
 	assert find_reports(base, 'wave1/Attic').len == 2
 	assert find_reports(os.join_path(base, 'missing'), 'Attic').len == 0
+	updates := chan [][]string{cap: 4}
+	progress := fn [updates] (_ int, batch [][]string) bool {
+		return updates.try_push(batch) == .success
+	}
+	assert find_reports(base, 'Attic', progress) == rows
+	mut first := [][]string{}
+	for updates.try_pop(mut first) == .success && first.len == 0 {}
+	assert first.len == 1 && first[0] in rows
 }
 
 fn test_move_to_attic() ! {
@@ -125,6 +133,19 @@ fn test_report_state_icons_fit_the_column() {
 	assert report_state_cell('unclear', false).trim_space() == '❓'
 	assert report_state_cell('done', false).trim_space() == '✅'
 	assert report_state_cell('', false) == ' '.repeat(report_state_width)
+}
+
+fn test_offloaded_report_uses_header_identity_after_download() {
+	placeholder := ['/findings/folder/REPORT.md', '-', '-', 'folder', '', '', '', '.',
+		'2026-11-27', 'confirmed', 'similar', 'offloaded']
+	assert report_row(placeholder, 70, false).contains('folder (offloaded)')
+	assert mark_key(placeholder, 4) == ''
+	entry := report_with_contents(placeholder, sample_report)
+	assert !report_offloaded(entry)
+	assert entry[1..7] == ['high', 'UAF', 'ANT-2026-ABCDEFGH', 'Use after free in r_bin_close',
+		'libr/bin/bin.c:42  in r_bin_close()', 'CWE-416']
+	assert entry[7..] == placeholder[7..11]
+	assert mark_key(entry, 4) == 'report:ant-2026-abcdefgh'
 }
 
 fn test_finding_advisory_context() ! {

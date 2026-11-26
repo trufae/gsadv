@@ -10,7 +10,11 @@ disclosures, written in [V](https://vlang.io).
 - Request CVEs and publish advisories on GitHub; manage confidential disclosure
   issues on GitLab.
 
-Run `gsadv` inside a repository to open the terminal UI.
+Run `gsadv` inside a repository to open the terminal UI. Reports is selected while
+the local scan runs, and reports appear as they are found. The other tabs load in
+parallel. The active tab shows the current loading step, and you can switch tabs
+or quit while it runs. If the scan finds no reports, the initial view switches to
+Advisories or Disclosures unless you've already interacted with it.
 Press `N` to write a draft by hand in `$EDITOR`, starting from an advisory template.
 Fill in the fields and sections or paste a complete advisory; leaving the template
 unchanged or emptying it cancels. `gsadv new` opens the same template from the CLI.
@@ -73,6 +77,9 @@ keywords in the title or body when the CWE is missing or unknown. Press `f`/`F`
 to filter by severity, Enter to preview a report and `e` to edit it. `t` moves the
 finding's directory into the attic next to it (`wave1/X` becomes `wave1/Attic/X`;
 an `attic` value containing `/` is a path below `antfind`).
+
+On macOS, offloaded reports appear by directory name as soon as they are found.
+Opening one downloads it and makes its title, severity and other fields available.
 
 Press `a` to open the Actions menu. `f` in that menu, or
 `gsadv fix <REPORT.md> [context]`, asks the AI agent to confirm the bug first:

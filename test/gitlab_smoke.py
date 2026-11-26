@@ -69,6 +69,11 @@ def stub():
     payload = json.loads(Path(args[args.index('--input') + 1]).read_text()) if '--input' in args else {}
     with (root / 'calls').open('a') as f:
         f.write(json.dumps(dict(client=client, host=host, method=method, path=path, payload=payload, args=args)) + '\n')
+    if os.environ.get('GSADV_SMOKE_HOLD_REQUESTS'):
+        deadline = time.monotonic() + 30
+        while not (root / 'release-tui-requests').exists():
+            assert time.monotonic() < deadline, 'timed out waiting to release TUI requests'
+            time.sleep(0.01)
     if os.environ.get('FAIL_API'):
         sys.exit('403 Forbidden: fixture denied access')
     if client == 'gh':
@@ -430,7 +435,10 @@ def tui_smoke(binary, root, env):
 
     master, slave = pty.openpty()
     fcntl.ioctl(slave, termios.TIOCSWINSZ, struct.pack('HHHH', 30, 140, 0, 0))
-    tui_env = dict(env, TERM='xterm-256color', NO_COLOR='', VCOLORS='', GSADV_GREP='')
+    tui_env = dict(env, TERM='xterm-256color', NO_COLOR='', VCOLORS='', GSADV_GREP='', GSADV_SMOKE_HOLD_REQUESTS='1')
+    calls_path = root / 'calls'
+    first_tui_call = len(calls_path.read_text().splitlines())
+    release_requests = root / 'release-tui-requests'
     process = subprocess.Popen([binary], cwd=root, env=tui_env,
                                stdin=slave, stdout=slave, stderr=slave, start_new_session=True)
     os.close(slave)
@@ -449,8 +457,36 @@ def tui_smoke(binary, root, env):
         raise AssertionError((needle, output.decode(errors='replace')))
 
     try:
+        reports = until('[Reports 1 (all)]')
+        assert 'Fixture report' in reports, reports
+        os.write(master, b'\r')
+        preview = until('Viewer heading')
+        assert 'Preview ANT-2026-QUICKFIX' in preview, preview
+        os.write(master, b'q')
+        until('local git:')
+        os.write(master, b'Hl')
+        until('[commits 3]')
+        os.write(master, b'H')
+        disclosures_loading = until('[disclosures 0 (all) loading...]')
+        assert 'FIXED IN' in disclosures_loading and 'RELEASE' in disclosures_loading, disclosures_loading
+
+        # All three GitLab tabs must start their first request before any can finish.
+        expected = {('issues', 'all', False), ('issues', 'opened', True), ('merge_requests', 'opened', True)}
+        deadline = time.monotonic() + 5
+        started = set()
+        while time.monotonic() < deadline:
+            for line in calls_path.read_text().splitlines()[first_tui_call:]:
+                url = urlsplit(json.loads(line)['path'])
+                query = parse_qs(url.query)
+                started.add((url.path.rsplit('/', 1)[-1], query['state'][0], 'page' in query))
+            if expected <= started:
+                break
+            time.sleep(0.01)
+        assert expected <= started, started
+        release_requests.touch()
+
         opening = until('[confidential]')
-        assert 'FIXED IN' in opening and 'RELEASE' in opening and '🟢' in opening
+        assert '🟢' in opening, opening
         os.write(master, b'\r')
         disclosure = until('Verified bounds check.')
         assert 'Preview GL-42' in disclosure and '[disclosures ' in disclosure, disclosure
@@ -715,6 +751,7 @@ def tui_smoke(binary, root, env):
         os.write(master, b'q')
         assert process.wait(timeout=10) == 0
     finally:
+        release_requests.touch()
         if process.poll() is None:
             process.kill()
             process.wait()

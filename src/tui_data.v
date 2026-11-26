@@ -2,6 +2,7 @@ module main
 
 import os
 import term
+import time
 
 enum TuiLoadKind {
 	repository
@@ -9,6 +10,8 @@ enum TuiLoadKind {
 	commits
 	git_status
 	reports
+	issue_label
+	report_states
 }
 
 struct TuiLoad {
@@ -17,6 +20,10 @@ struct TuiLoad {
 	error string
 	repository Repository = GitHub{}
 	rows [][]string
+	partial bool
+	dirs int
+	report_updates map[int][]string
+	report_revision int
 }
 
 // Workers own their results; only the input loop changes the displayed snapshot.
@@ -28,25 +35,59 @@ fn tui_load(api Repository, kind TuiLoadKind, results chan TuiLoad) {
 	match kind {
 		.repository {
 			repository = configured_repository('') or { failure = err.msg(); GitHub{} }
-			text = repository.repo
-			if text == '' && failure == '' { failure = 'cannot find repository' }
+			if repository.repo == '' && failure == '' { failure = 'cannot find repository' }
 		}
 		.advisories { rows = api.advisories_with_releases('') or { failure = err.msg(); [][]string{} } }
-		.commits { rows = commits() or { failure = err.msg(); [][]string{} } }
+		.commits {
+			text = commit_grep()
+			rows = matching_commits(text) or { failure = err.msg(); [][]string{} }
+		}
 		.git_status { text = local_git_status() }
 		.reports {
 			text = reports_base()
-			rows = find_reports(text, project_setting('attic'))
+			attic := project_setting('attic')
+			dir := text
+			progress := fn [dir, results] (dirs int, batch [][]string) bool {
+				return results.try_push(TuiLoad{kind: .reports, text: dir, rows: batch, partial: true, dirs: dirs}) == .success
+			}
+			progress(0, [])
+			rows = find_reports(dir, attic, progress)
 		}
+		.issue_label { text = project_setting('label') }
+		.report_states { return }
 	}
 	results <- TuiLoad{kind: kind, rows: rows, text: text, error: failure, repository: repository}
 }
 
+fn tui_load_report_states(rows [][]string, revision int, results chan TuiLoad) {
+	mut updates := map[int][]string{}
+	for i, entry in rows {
+		state := report_state(entry[0])
+		if report_offloaded(entry) && !report_file_offloaded(entry[0]) {
+			if text := os.read_file(entry[0]) {
+				mut updated := report_with_contents(entry, text)
+				updated[9] = state
+				updates[i] = updated
+				continue
+			}
+		}
+		if state != entry[9] {
+			mut updated := entry.clone()
+			updated[9] = state
+			updates[i] = updated
+		}
+	}
+	results <- TuiLoad{kind: .report_states, report_updates: updates, report_revision: revision}
+}
+
+const tui_load_count = int(TuiLoadKind.report_states) + 1
+
 struct TuiLoader {
-	results chan TuiLoad = chan TuiLoad{cap: 5}
+	results chan TuiLoad = chan TuiLoad{cap: tui_load_count}
 mut:
-	pending []bool = []bool{len: 5}
-	again []bool = []bool{len: 5}
+	pending []bool = []bool{len: tui_load_count}
+	again []bool = []bool{len: tui_load_count}
+	started []time.Time = []time.Time{len: tui_load_count}
 }
 
 // Coalesce repeated reloads. A workflow may require a fresh snapshot after an
@@ -58,7 +99,23 @@ fn (mut loader TuiLoader) request(api Repository, kind TuiLoadKind, fresh bool) 
 		return
 	}
 	loader.pending[i] = true
+	loader.started[i] = time.now()
 	spawn tui_load(api, kind, loader.results)
+}
+
+fn (loader TuiLoader) running(kind TuiLoadKind) bool {
+	return loader.pending[int(kind)]
+}
+
+fn (loader TuiLoader) seconds(kind TuiLoadKind) i64 {
+	return time.since(loader.started[int(kind)]).milliseconds() / 1000
+}
+
+fn (mut loader TuiLoader) request_report_states(rows [][]string, revision int) {
+	i := int(TuiLoadKind.report_states)
+	if loader.pending[i] || rows.len == 0 { return }
+	loader.pending[i] = true
+	spawn tui_load_report_states(rows.clone(), revision, loader.results)
 }
 
 fn (mut loader TuiLoader) poll(api Repository) ?TuiLoad {
@@ -66,6 +123,10 @@ fn (mut loader TuiLoader) poll(api Repository) ?TuiLoad {
 		mut result := TuiLoad{}
 		if loader.results.try_pop(mut result) != .success { return none }
 		i := int(result.kind)
+		if result.partial {
+			if loader.again[i] { continue }
+			return result
+		}
 		loader.pending[i] = false
 		if loader.again[i] {
 			loader.again[i] = false
@@ -133,9 +194,26 @@ fn start_preview(api Repository, view int, entry []string) ?TuiPreview {
 	title := if view == 4 { entry[3] } else { ref }
 	result := chan TuiPreviewResult{cap: 1}
 	mut preview := TuiPreview{ref: ref, title: title, result: result}
-	preview.doc.set_text('Loading preview...', .plain, false)
+	preview.doc.set_text(if view == 4 && report_offloaded(entry) { 'Downloading report...' } else { 'Loading preview...' }, .plain, false)
 	spawn load_preview(api, view, ref, result)
 	return preview
+}
+
+fn tui_download_report(api Repository, entry []string) ![]string {
+	results := chan TuiPreviewResult{cap: 1}
+	spawn load_preview(api, 4, entry[0], results)
+	mut screen := TuiScreen{}
+	for {
+		mut result := TuiPreviewResult{}
+		if results.try_pop(mut result) == .success {
+			if result.err != '' { return error(result.err.replace('\n', ' ')) }
+			return report_with_contents(entry, result.text)
+		}
+		w, h := terminal_size()
+		screen.draw(['Downloading ${entry[3]}...', 'Esc/Ctrl+C/q: cancel'], w, h)
+		if poll_key() in ['\x1b', '\x03', 'q'] { return error('Report download cancelled') }
+	}
+	return error('Report download cancelled')
 }
 
 fn load_preview(api Repository, view int, ref string, result chan TuiPreviewResult) {
@@ -217,7 +295,7 @@ fn (mut list TuiList) rebuild(entries [][]string, advs [][]string, links Advisor
 }
 
 fn mark_key(entry []string, view int) string {
-	if entry.len == 0 { return '' }
+	if entry.len == 0 || (view == 4 && report_offloaded(entry)) { return '' }
 	return if view == 4 && entry.len >= 9 { invalid_key('report:' + entry[3]) } else { invalid_key(entry[0]) }
 }
 

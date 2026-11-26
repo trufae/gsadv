@@ -138,7 +138,7 @@ fn main() {
 		return
 	}
 	if cmd == 'tui' {
-		tui(GitHub{}, issue_label(args))
+		tui(if args.len > 1 { ?string(args[1]) } else { none })
 		return
 	}
 	input := if cmd in ['new', 'review', 'pr-review', 'comment', 'similar', 'invalid', 'unmark', 'issue-fix', 'issue-review', 'issue-related'] { id } else { '' }
