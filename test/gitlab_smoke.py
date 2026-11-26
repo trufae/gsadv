@@ -382,7 +382,8 @@ def tui_smoke(binary, root, env):
 
     master, slave = pty.openpty()
     fcntl.ioctl(slave, termios.TIOCSWINSZ, struct.pack('HHHH', 30, 140, 0, 0))
-    process = subprocess.Popen([binary], cwd=root, env=dict(env, TERM='xterm-256color', NO_COLOR='', VCOLORS=''),
+    tui_env = dict(env, TERM='xterm-256color', NO_COLOR='', VCOLORS='', GSADV_GREP='')
+    process = subprocess.Popen([binary], cwd=root, env=tui_env,
                                stdin=slave, stdout=slave, stderr=slave, start_new_session=True)
     os.close(slave)
 
@@ -402,7 +403,7 @@ def tui_smoke(binary, root, env):
     try:
         opening = until('[confidential]')
         assert 'FIXED IN' in opening and 'RELEASE' in opening and '🟢' in opening
-        os.write(master, b'-')
+        os.write(master, b'\r')
         disclosure = until('Verified bounds check.')
         assert 'Preview GL-42' in disclosure and '[disclosures ' in disclosure, disclosure
         os.write(master, b'q')
@@ -442,11 +443,26 @@ def tui_smoke(binary, root, env):
         os.write(master, b'I')
         until('Removed local invalid tag')
         os.write(master, b'\t')
-        until('[commits 1]')
-        os.write(master, b'-')
+        until('[commits 3]')
+        os.write(master, b'/')
+        until('Filter text:')
+        os.write(master, b'fix\r')
+        until('[commits 2]')
+        os.write(master, b'\r')
         commit = until('+Local commit preview fixture')
-        assert 'Preview ' in commit and '[commits 1]' in commit, commit
+        assert 'Preview ' in commit, commit
         assert 'diff --git a/preview-fixture.txt b/preview-fixture.txt' in commit, commit
+        older = subprocess.check_output(['git', 'rev-parse', 'HEAD~1'], cwd=root, text=True).strip()
+        os.write(master, b'n')
+        next_commit = until(f'commit {older}')
+        assert f'Preview {older}' in next_commit, next_commit
+        assert re.search(r'\x1b\[7m[^\x1b]*Fix parser', next_commit), next_commit
+        # At the end of the filtered list, keep the preview and accept filenames with n/p.
+        os.write(master, b'n:w next preview.txt\r')
+        until('Saved next preview.txt')
+        assert (root / 'next preview.txt').read_text().startswith(f'commit {older}\n')
+        os.write(master, b'p')
+        until('+Local commit preview fixture')
         os.write(master, b'q')
         until('local git:')
         os.write(master, b'\t')
@@ -491,7 +507,7 @@ def tui_smoke(binary, root, env):
         until('[Reports 0 (critical)]')
         os.write(master, b'F')
         until('[Reports 1 (all)]')
-        os.write(master, b'-')
+        os.write(master, b'\r')
         split = until('<path> save')
         assert '[Reports 1 (all)]' in split and 'Preview ANT-2026-QUICKFIX' in split, split
         assert '\x1b[1;36mViewer heading' in split, split
@@ -517,7 +533,7 @@ def tui_smoke(binary, root, env):
         fcntl.ioctl(master, termios.TIOCSWINSZ, struct.pack('HHHH', 30, 140, 0, 0))
         os.write(master, b'q')
         until('[Reports 1 (all)]')
-        os.write(master, b'\r')
+        os.write(master, b'v')
         rendered = until('<path> save')
         assert '\x1b[1;36mViewer heading' in rendered and '\x1b[0;33m`inline code`' in rendered, rendered
         os.write(master, b'\x1b[6~')

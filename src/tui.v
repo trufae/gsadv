@@ -237,8 +237,9 @@ m: mark the selected item for everyone using gsadv on this repository (other ter
    - ignore (dim, sort last), ! invalid (with a reason); u in the panel removes it.
    The mark, who set it, when and its note appear below the list.
    Marks are manual triage decisions, separate from advisory and release state.
-enter: view advisory/commit/issue/PR/report; e: edit advisory or report; r: AI review
--: preview the selected item below the list; j/k scroll, h/l page, q closes the preview
+Enter: preview the selected item below the list
+   n/p: next/previous item; j/k: scroll by line; h/l: scroll by page; q: close preview
+v: full-screen view; e: edit advisory or report; r: AI review
 n: new advisory: a AI draft, m manual draft, i import the ADVISORY.md of the finding
    referenced by the commit message (ANT-...) or of the selected report;
    commits with one ready to import show 📝 ADVISORY.md until an advisory is linked
@@ -255,7 +256,7 @@ In issues/PRs/MRs, press f once from all to show only open items; each tab remem
 g: reload; A: cycle AI agent
 ,: project settings saved in .gsadv.ini: issues/PRs/MRs label (empty shows all labels),
    commits git log -E --grep regex (empty shows all), Reports antfind and attic directories
-Reports: REPORT.md files under antfind, skipping attic; enter views, e edits, f/F severity,
+Reports: REPORT.md files under antfind, skipping attic; Enter previews, e edits, f/F severity,
    a then f confirms with a reproducer, then fixes and commits locally (OSS-SCAN - <id>).
    a then F reviews and applies the suggested patch without building or running it, then drafts
    the advisory from the files already in the report directory.
@@ -1229,17 +1230,17 @@ fn tui(initial_api Repository, initial_label string) {
 		// Keep the active view visible when a short terminal only has one header.
 		if !split && layout.head == 1 { headers[0] = headers[1] }
 		item_hints := if view == 4 {
-			['a actions', 'm mark', 'enter view', 'e edit', 'o result', 'd advisory', 'b similar', 's similar.md', 't attic', 'g reload']
+			['a actions', 'm mark', 'Enter preview', 'v view', 'e edit', 'o result', 'd advisory', 'b similar', 's similar.md', 't attic', 'g reload']
 		} else {
-			['a actions', 'm mark', 'enter view', 'e edit', 'r review', 'n new', 'N manual draft', 'g reload', 'A agent']
+			['a actions', 'm mark', 'Enter preview', 'v view', 'e edit', 'r review', 'n new', 'N manual draft', 'g reload', 'A agent']
 		}
 		mut frame := list_frame(layout, headers, body, [filter_hint,
 			if mark_note != '' { mark_note } else { key_hints(item_hints, width) },
-			key_hints(['? help', 'q quit', 'hjkl move', '/ text', ', settings', 'f/F state', '- preview'], width)])
+			key_hints(['? help', 'q quit', 'hjkl move', '/ text', ', settings', 'f/F state'], width)])
 		if split {
 			preview.poll()
 			if h - frame.len > 2 { frame << term.inverse(' Preview ${preview.title} ') }
-			frame << preview.doc.frame(w, h - frame.len)
+			frame << preview.doc.frame(w, h - frame.len, true)
 		}
 		screen.draw(frame, w, h)
 		if split { preview.doc.cursor(w, h) }
@@ -1252,7 +1253,16 @@ fn tui(initial_api Repository, initial_label string) {
 		}
 		if k == '' { continue }
 		if split {
-			if !preview.doc.handle(k) { preview = TuiPreview{} }
+			if !preview.doc.entering && k in ['n', 'p'] {
+				step := if k == 'n' { 1 } else { -1 }
+				next := if selected < 0 { sel[view] } else { sel[view] + step }
+				if next >= 0 && next < n {
+					preview = start_preview(api, view, active_entries[visible[view][next]]) or { continue }
+					sel[view] = next
+				}
+			} else if !preview.doc.handle(k) {
+				preview = TuiPreview{}
+			}
 			continue
 		}
 		mut show_input := input
@@ -1274,7 +1284,7 @@ fn tui(initial_api Repository, initial_label string) {
 					'b find similar bugs using it as a template (saved as SIMILAR.md)\n' +
 					if report.len >= 11 && report[10] != '' { 's view SIMILAR.md\n' } else { '' } +
 					't move to the attic (${project_setting('attic')})\nm mark (important, wip, pin, ignore, invalid)\n\nChoose a key; Enter/Esc cancels.')
-				if k == 'v' { k = '\n' } else if k !in ['e', 'f', 'F', 'o', 'w', 'd', 'b', 's', 't', 'm'] { continue }
+				if k !in ['v', 'e', 'f', 'F', 'o', 'w', 'd', 'b', 's', 't', 'm'] { continue }
 				fix_command = match k {
 					'f' { 'fix' }
 					'F' { 'quickfix' }
@@ -1298,7 +1308,6 @@ fn tui(initial_api Repository, initial_label string) {
 				k = tui_dialog('Actions for ${target}\n${hint}' + if mark_note == '' { '' } else { '\n${mark_note}' } + '\n\n' +
 					source_menu + advisory_menu + 'N write a draft manually\nm mark (important, wip, pin, ignore, invalid)\n\nChoose a key; Enter/Esc cancels.')
 				if k == 'v' && id != '' {
-					k = '\n'
 					show_input = ''
 				} else if k !in ['s', 'e', 'r', 'b', 'C', 'M', 'R', 'N', 'n', 'm'] && !actions.any(it.starts_with(k + ' ')) {
 					continue
@@ -1343,10 +1352,10 @@ fn tui(initial_api Repository, initial_label string) {
 			changed = [true, true, true, true, true]
 			continue
 		}
-		if pending_action != '' && (fix_command != '' || k in ['q', '\x03', 'c', 'd', 'p', 'x', 't', 'e', 'r', 'n', 'N', 'C', 'M', 'R', 'b', '\n', '\r']) {
+		if pending_action != '' && (fix_command != '' || k in ['q', '\x03', 'c', 'd', 'p', 'x', 't', 'e', 'r', 'n', 'N', 'C', 'M', 'R', 'b', 'v']) {
 			continue
 		}
-		if view == 4 && (fix_command != '' || k in ['\n', '\r', 'e', 'o', 'w', 'd', 'b', 's', 't']) {
+		if view == 4 && (fix_command != '' || k in ['v', 'e', 'o', 'w', 'd', 'b', 's', 't']) {
 			if report.len == 0 {
 				status = 'no report selected'
 				continue
@@ -1423,13 +1432,15 @@ fn tui(initial_api Repository, initial_label string) {
 			'q', '\x03' {
 				break
 			}
-			'-' {
-				ref := if report.len > 0 { report[0] } else { target }
-				if ref == '' {
+			'\n', '\r' {
+				if selected < 0 {
 					status = 'no item selected to preview'
 					continue
 				}
-				preview = start_preview(api, view, ref, mark_name)
+				preview = start_preview(api, view, active_entries[selected]) or {
+					status = 'no item selected to preview'
+					continue
+				}
 			}
 			'j', '\x1b[B' { sel[view]++ }
 			'k', '\x1b[A' { sel[view]-- }
@@ -1550,14 +1561,14 @@ fn tui(initial_api Repository, initial_label string) {
 				marks_stamp = api.marks_stamp()
 				changed = [true, true, true, true, true]
 			}
-			'\n', '\r', 'e', 'r', 'b', 'n', 'N', 's', 'C', 'M', 'R', '?' {
-				if api.repo == '' && k != '?' && !(view == 1 && k in ['\n', '\r']) {
+			'v', 'e', 'r', 'b', 'n', 'N', 's', 'C', 'M', 'R', '?' {
+				if api.repo == '' && k != '?' && !(view == 1 && k == 'v') {
 					status = 'Repository unavailable; wait for loading or press g to retry'
 					continue
 				}
 				if k == 'M' && view < 2 { status = 'select an issue/PR/MR to comment'; continue }
 				if k == 'R' && (view != 3 || input == '') { status = 'select a PR/MR to review for its contributor'; continue }
-				if id == '' && (k in ['e', 's', 'C'] || (k in ['\n', '\r', 'b', 'r', 'M'] && input == '')) {
+				if id == '' && (k in ['e', 's', 'C'] || (k in ['v', 'b', 'r', 'M'] && input == '')) {
 					status = 'no advisory selected; press N for a manual draft or n for AI'
 					continue
 				}

@@ -14,7 +14,7 @@ Run `gsadv` inside a repository to open the terminal UI.
 Press `N` to write a draft by hand in `$EDITOR`, starting from an advisory template.
 Fill in the fields and sections or paste a complete advisory; leaving the template
 unchanged or emptying it cancels. `gsadv new` opens the same template from the CLI.
-Lowercase `n` opens a menu: `a` generates a new advisory with AI from the selected
+In the list, `n` opens a menu: `a` generates a new advisory with AI from the selected
 commit, issue or PR/MR (`gsadv new <commit|url>`), `m` writes a manual draft like `N`,
 and `i` imports an `ADVISORY.md` when one is available (see the Reports tab below).
 Press `a` for the actions that apply to the selected item in the current tab
@@ -28,19 +28,20 @@ Use `J`/`K` or AvPág/RePág (Page Down/Page Up) to move down/up ten rows.
 Switch to the next/previous tab with Tab/Shift-Tab, `l`/`h` or the right/left arrows.
 `H`/`L` jump to the first/last tab.
 
-The document viewer shows Markdown in terminal colors. Use `j`/`k`, the arrows,
-the mouse wheel or Page Down/Page Up to scroll, and `g`/`G` to jump to the
-beginning/end. Lines wrap to the terminal width and the viewer keeps your place
-when the window resizes. Type `:w <path>` and press Enter to save the original
-text to a new file. Paths can contain spaces and start with `~/`. Press `q`,
-type `:q` or press Esc to close. `NO_COLOR=1` shows the source in the viewer.
-Set `PAGER` to open the original text in an external pager.
+Press `v` to open the full-screen viewer. It shows Markdown in terminal colors.
+Use `j`/`k`, the arrows, the mouse wheel or Page Down/Page Up to scroll, and
+`g`/`G` to jump to the beginning/end. Lines wrap to the terminal width and the
+viewer keeps your place when the window resizes. Type `:w <path>` and press Enter
+to save the original text to a new file. Paths can contain spaces and start with
+`~/`. Press `q`, type `:q` or press Esc to close. `NO_COLOR=1` shows the source in
+the viewer. Set `PAGER` to open the original text in an external pager.
 
-Press `-` on an advisory, commit, issue, pull or merge request, or report to
+Press Enter on an advisory, commit, issue, pull or merge request, or report to
 preview the selected item. The list stays above and the preview takes roughly
-the lower two thirds of the terminal. Use `j`/`k` or Up/Down to scroll by line,
-and `h`/`l`, Left/Right or Page Up/Page Down to scroll by page. Use `:w <path>`
-to save a copy or `q` to close the preview and return to the full list.
+the lower two thirds of the terminal. Press `n` or `p` to preview the next or
+previous item in the list. Use `j`/`k` or Up/Down to scroll by line, and `h`/`l`,
+Left/Right or Page Up/Page Down to scroll by page. Use `:w <path>` to save a copy
+or `q` to close the preview and return to the full list.
 
 The shared issue/PR/MR label filter is the `label` setting (press `,`); an empty
 value shows all labels. Results appear page by page while the remaining history
@@ -62,7 +63,7 @@ severity. The severity circle uses the advisory colors; ⚫ marks reports tagged
 `[NOT SECURITY]`. The type column (UAF, DOUBLE-FREE, STACK-OVF, HEAP-OVF,
 OOB-READ, INT-UNDERFLOW, CMD-INJ, OOM, HANG, ...) is derived from the CWE, or from
 keywords in the title or body when the CWE is missing or unknown. Press `f`/`F`
-to filter by severity, Enter to read a report and `e` to edit it. `t` moves the
+to filter by severity, Enter to preview a report and `e` to edit it. `t` moves the
 finding's directory into the attic next to it (`wave1/X` becomes `wave1/Attic/X`;
 an `attic` value containing `/` is a path below `antfind`).
 

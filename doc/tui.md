@@ -34,7 +34,7 @@ the current session. Enter applies and reloads both tabs; Ctrl+U then Enter clea
 filter to include all labels; Escape or Ctrl+C cancels. Changing the label resets both
 tabs to their first row and preserves their text searches. Both include every state, so
 closed issues and merged PRs remain available for reporting. `closed` in this list can
-mean either a merged or a closed, unmerged PR; `enter` shows its merge metadata.
+mean either a merged or a closed, unmerged PR. Press Enter to preview its merge metadata.
 
 For GitLab, the disclosure tab lists `security-advisory` issues (configurable with
 `GSADV_ADVISORY_LABEL`). Rows show the native `opened`/`closed` state and a separate
@@ -53,7 +53,8 @@ Keys:
 | mouse wheel down / up | move one row, like `j` / `k` |
 | `J` / `K` | move ten rows |
 | `tab` / `shift-tab` | cycle views forward / backward, wrapping at either end and selecting a linked entry in the destination view when one exists |
-| `enter` | show the commit (`git show`), advisory or issue/PR discussion (`r2` Markdown rendering if available, otherwise `$PAGER`) |
+| Enter | preview the selected advisory, commit, issue, PR/MR or report below the list |
+| `v` | open the selected item in the full-screen viewer |
 | `n` | draft from the selected commit or issue/PR; in the advisory view, prompt for a commit or URL and optional context |
 | `N` | write a draft manually in `$EDITOR` from a template; no AI or source selection needed |
 | `e` | edit the linked advisory |
@@ -76,6 +77,10 @@ Keys:
 | `g` | reload all lists and local Git status |
 | `?` | show all keys and the active AI agent |
 | `q` / `Ctrl+C` | quit from the main list |
+
+In the split preview, press `n` or `p` to move to the next or previous item in the
+current filtered list. Use `j`/`k` to scroll by line or `h`/`l` to scroll by page.
+Press `q` or Escape to return to the full list.
 
 Startup and `g` load advisories/disclosures, commits, labeled issues/PRs/MRs and Git status in background
 threads. The screen opens before these requests complete; tabs show `loading...` until

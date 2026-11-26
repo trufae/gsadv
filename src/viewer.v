@@ -45,7 +45,7 @@ fn view_text(text string, vf ViewFormat) ! {
 	mut screen := TuiScreen{}
 	for {
 		w, h := terminal_size()
-		screen.draw(doc.frame(w, h), w, h)
+		screen.draw(doc.frame(w, h, false), w, h)
 		doc.cursor(w, h)
 		if !doc.handle(key(w, h)) { return }
 	}
@@ -131,7 +131,7 @@ fn (mut doc DocumentView) set_text(text string, vf ViewFormat, can_save bool) {
 	doc.can_save = can_save
 }
 
-fn (mut doc DocumentView) frame(w int, h int) []string {
+fn (mut doc DocumentView) frame(w int, h int, split bool) []string {
 	width := int_max(1, line_width(w))
 	if width != doc.width {
 		doc.rows = wrap_document(doc.lines, width)
@@ -156,6 +156,7 @@ fn (mut doc DocumentView) frame(w int, h int) []string {
 		} else {
 			pos := '${doc.rows[doc.top].line + 1}/${doc.lines.len}'
 			mut hints := ['↑/↓ scroll']
+			if split { hints << 'n/p next/prev' }
 			if doc.can_save { hints << ':w <path> save' }
 			hints << 'q close'
 			term.dim(pos) + '  ' + key_hints(hints, width - pos.len - 2)

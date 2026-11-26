@@ -144,7 +144,15 @@ mut:
 	doc DocumentView
 }
 
-fn start_preview(api Repository, view int, ref string, title string) TuiPreview {
+fn start_preview(api Repository, view int, entry []string) ?TuiPreview {
+	min_fields := match view {
+		0 { 5 }
+		4 { 9 }
+		else { 3 }
+	}
+	if entry.len < min_fields || entry[0] == '' { return none }
+	ref := entry[0]
+	title := if view == 4 { entry[3] } else { ref }
 	result := chan TuiPreviewResult{cap: 1}
 	mut preview := TuiPreview{ref: ref, title: title, result: result}
 	preview.doc.set_text('Loading preview...', .plain, false)
