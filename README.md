@@ -27,6 +27,15 @@ confirm before gsadv posts it (`gsadv pr-review <PR URL|number> [context]`).
 Use `J`/`K` or AvPág/RePág (Page Down/Page Up) to move down/up ten rows.
 Switch to the next/previous tab with Tab/Shift-Tab, `l`/`h` or the right/left arrows.
 `H`/`L` jump to the first/last tab.
+
+The document viewer shows Markdown in terminal colors. Use `j`/`k`, the arrows,
+the mouse wheel or Page Down/Page Up to scroll, and `g`/`G` to jump to the
+beginning/end. Lines wrap to the terminal width and the viewer keeps your place
+when the window resizes. Type `:w <path>` and press Enter to save the original
+text to a new file. Paths can contain spaces and start with `~/`. Press `q`,
+type `:q` or press Esc to close. `NO_COLOR=1` shows the source in the viewer.
+Set `PAGER` to open the original text in an external pager.
+
 The shared issue/PR/MR label filter is the `label` setting (press `,`); an empty
 value shows all labels. Results appear page by page while the remaining history
 loads in the background. Changing the label takes effect after the current page finishes.
@@ -161,7 +170,7 @@ such as terminal output test fixtures.
 Download an archive from [Releases](https://github.com/trufae/gsadv/releases),
 extract it, and place the `gsadv` executable in a directory on your `PATH`.
 
-Or install [V](https://vlang.io) and build from source:
+Or install a recent [V](https://vlang.io) with `vlib/x/markdown` and build from source:
 
 ```sh
 git clone https://github.com/trufae/gsadv.git

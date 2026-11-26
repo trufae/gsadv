@@ -21,8 +21,6 @@ def stub():
     args = sys.argv[1:]
     client = Path(sys.argv[0]).name
     root = Path(os.environ['FORGE_FIXTURE'])
-    if client == 'r2':
-        return
     if client == 'agent':
         prompt = sys.stdin.read()
         if (root / 'fail-agent').exists():
@@ -171,13 +169,13 @@ def main():
             assert result.stderr == '', result.stderr
         bindir = root / 'bin'
         bindir.mkdir()
-        for name in ['glab', 'gh', 'agent', 'r2']:
+        for name in ['glab', 'gh', 'agent']:
             script = bindir / name
             script.write_text(f'#!{sys.executable}\n' + Path(__file__).read_text().split('\n', 1)[1])
             script.chmod(0o755)
         env = {k: v for k, v in os.environ.items() if not k.startswith(('GSADV_', 'GHADV_')) and k not in ['GH_HOST', 'GITLAB_HOST']}
         env.update(PATH=str(bindir) + os.pathsep + env['PATH'], FORGE_FIXTURE=str(root),
-                   XDG_STATE_HOME=str(root / 'state'), TMPDIR=str(root), EDITOR='true',
+                   XDG_STATE_HOME=str(root / 'state'), TMPDIR=str(root), EDITOR='true', PAGER='',
                    GSADV_AI=shlex.quote(str(bindir / 'agent')))
         subprocess.run(['git', 'init', '-q', str(root)], check=True)
         subprocess.run(['git', '-C', str(root), 'remote', 'add', 'origin', 'git@gitlab.com:group/sub/repo.git'], check=True)
@@ -372,13 +370,16 @@ def tui_smoke(binary, root, env):
 
     finding = root / FINDING
     finding.mkdir(parents=True)
-    report = '```\nANT-2026-QUICKFIX  [high]  CWE-476  dos\nFixture report\n```\n'
+    report = ('```\nANT-2026-QUICKFIX  [high]  CWE-476  dos\nFixture report\n```\n\n'
+              '# Viewer heading\n\n**Bold text** and `inline code`\n\n'
+              + ''.join(f'Scroll line {i:02}\n' for i in range(60))
+              + '\n**' + '界' * 43 + 'wrap tail**\n')
     (finding / 'REPORT.md').write_text(report)
     (finding / 'suggested.patch').write_text('Fixture patch\n')
 
     master, slave = pty.openpty()
     fcntl.ioctl(slave, termios.TIOCSWINSZ, struct.pack('HHHH', 30, 140, 0, 0))
-    process = subprocess.Popen([binary], cwd=root, env=dict(env, TERM='xterm-256color'),
+    process = subprocess.Popen([binary], cwd=root, env=dict(env, TERM='xterm-256color', NO_COLOR='', VCOLORS=''),
                                stdin=slave, stdout=slave, stderr=slave, start_new_session=True)
     os.close(slave)
 
@@ -476,12 +477,39 @@ def tui_smoke(binary, root, env):
         until('[Reports 0 (critical)]')
         os.write(master, b'F')
         until('[Reports 1 (all)]')
+        os.write(master, b'\r')
+        rendered = until('<path> save')
+        assert '\x1b[1;36mViewer heading' in rendered and '\x1b[0;33m`inline code`' in rendered, rendered
+        os.write(master, b'\x1b[6~')
+        scrolled = until('<path> save')
+        position = re.search(r'\x1b\[1;1H\x1b\[0m(Scroll line \d+)', scrolled)
+        assert position, scrolled
+        anchor = position.group(1)
+        fcntl.ioctl(master, termios.TIOCSWINSZ, struct.pack('HHHH', 32, 55, 0, 0))
+        resized = until('<path> save')
+        assert f'\x1b[1;1H\x1b[0m{anchor}' in resized, resized
+        os.write(master, b'G')
+        wrapped = until('<path> save')
+        assert '\x1b[0;1m' + '界' * 27 in wrapped, wrapped
+        assert '\x1b[0;1m' + '界' * 16 + 'wrap tail' in wrapped, wrapped
+        os.write(master, b':w viewer copy.md\r')
+        until('Saved viewer copy.md')
+        exported = root / 'viewer copy.md'
+        assert exported.read_bytes() == report.encode()
+        os.write(master, b':w viewer copy.md\r')
+        until('Save failed:')
+        assert exported.read_bytes() == report.encode()
+        fcntl.ioctl(master, termios.TIOCSWINSZ, struct.pack('HHHH', 30, 140, 0, 0))
+        os.write(master, b':q\r')
+        until('[Reports 1 (all)]')
         os.write(master, b'a')
         menu = until('Choose a key')
         assert 'f fix with AI' in menu and 'F quickfix with AI' in menu and 'x confirm' not in menu, menu
         os.write(master, b'f')
         until('Extra context')
         os.write(master, b'\r')
+        until('<path> save')
+        os.write(master, b'q')
         until('Press Enter to return')
         assert 'Build the code, then reproduce the bug' in (root / 'prompt').read_text()
         assert (finding / 'RESULT.md').read_text().startswith('Verdict: inconclusive')
@@ -496,6 +524,8 @@ def tui_smoke(binary, root, env):
         failure = re.sub(r'\x1b\[[0-9;]*m', '', until('\r\n> '))
         assert '✗ quickfix failed' in failure and 'r retry u resume without AI Enter return' in failure, failure
         os.write(master, b'r')
+        until('<path> save')
+        os.write(master, b'q')
         until('Press Enter to return')
         prompt = (root / 'prompt').read_text()
         assert prompt.startswith('Quickfix report ANT-2026-QUICKFIX')
@@ -576,7 +606,7 @@ def tui_smoke(binary, root, env):
 
 
 if __name__ == '__main__':
-    if Path(sys.argv[0]).name in ['glab', 'gh', 'agent', 'r2']:
+    if Path(sys.argv[0]).name in ['glab', 'gh', 'agent']:
         stub()
     else:
         main()

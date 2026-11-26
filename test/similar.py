@@ -127,7 +127,7 @@ def cli_checks(binary, root):
 
 
 def tui_checks(binary, root):
-    env = {'GSADV_AI': 'ai', 'EDITOR': 'editor'}
+    env = {'GSADV_AI': 'ai', 'EDITOR': 'editor', 'PAGER': 'viewer-pager'}
     with Terminal(binary, root, 'tui', env, controlling=True) as ui:
         ui.expect('GHSA-test')
         ui.expect('a actions')

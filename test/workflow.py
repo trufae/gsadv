@@ -98,10 +98,8 @@ elif name == 'ai':
         finally:
             (root / 'ai.stopped').touch()
     sys.exit(int(os.environ.get('AI_EXIT', '0')))
-elif name == 'r2':
-    command = sys.argv[sys.argv.index('-c') + 1]
-    path = command.removeprefix('cat -m ').removesuffix('~..')
-    text = Path(path).read_text()
+elif name == 'viewer-pager':
+    text = Path(sys.argv[1]).read_text()
     (root / 'viewed.md').write_text(text)
     print(text, end='')
 else:
@@ -146,7 +144,7 @@ def run(binary, root, mode='', answer='', args=None, **extra):
     env = os.environ | {
         'PATH': str(root) + os.pathsep + os.environ['PATH'],
         'TEST_ROOT': str(root), 'TMPDIR': str(root),
-        'GSADV_AI': 'ai', 'EDITOR': 'editor', 'EDITOR_MODE': mode,
+        'GSADV_AI': 'ai', 'EDITOR': 'editor', 'EDITOR_MODE': mode, 'PAGER': 'viewer-pager',
     } | extra
     result = subprocess.run(
         [binary, *(args or ['-r', 'owner/repo', 'review', 'GHSA-test'])],
@@ -157,7 +155,7 @@ def run(binary, root, mode='', answer='', args=None, **extra):
 
 
 def setup(root):
-    for name in ('gh', 'ai', 'editor', 'r2'):
+    for name in ('gh', 'ai', 'editor', 'viewer-pager'):
         (root / name).write_text(STUB)
         (root / name).chmod(0o700)
     for name, text in [('original', ORIGINAL), ('reply', REPLY), ('manual', MANUAL)]:
@@ -277,7 +275,7 @@ def github_patch_checks(binary, root):
 
 
 def tui_checks(binary, root):
-    env = {'GSADV_AI': 'ai', 'EDITOR': 'editor', 'EDITOR_MODE': ''}
+    env = {'GSADV_AI': 'ai', 'EDITOR': 'editor', 'EDITOR_MODE': '', 'PAGER': 'viewer-pager'}
     (root / 'saved.json').unlink(missing_ok=True)
     # Accepting the unchanged review diff must PATCH the AI version, report success,
     # and reload the updated advisory before displaying the list again.

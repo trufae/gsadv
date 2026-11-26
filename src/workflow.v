@@ -136,7 +136,7 @@ fn continue_edit(dir string, run_ai bool, resume string) ! {
 			os.write_file(saved, report) or { eprintln('Could not save ${saved}: ${err}') }
 			outcome = 'Saved the findings as ${saved}'
 		}
-		view_text(report)!
+		view_text(report, .markdown)!
 		if outcome != '' { println(outcome) }
 		return
 	}
@@ -1104,7 +1104,7 @@ fn resume_comment(dir string, session EditSession, run_ai bool, resume string) !
 	s := api.source(session.id)!
 	if s.kind == 'commit' {
 		println('Review report saved in ${path}')
-		view_text(body)!
+		view_text(body, .markdown)!
 		return
 	}
 	println('\n${body}\n')

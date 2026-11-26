@@ -70,7 +70,7 @@ def checks(binary, root):
     (root / 'issues').write_text(''.join(
         f'https://github.com/owner/repo/issues/{i}\t{i}\tissue\topen\t{title} report\n'
         for i, (_, _, title) in enumerate(rows, 1)))
-    with Terminal(binary, root, 'tui', {'GSADV_LABEL': 'security'}) as ui:
+    with Terminal(binary, root, 'tui', {'GSADV_LABEL': 'security', 'PAGER': 'viewer-pager'}) as ui:
         ui.expect('advisories 4 (all)')
         for key, states in [('F', ['closed', 'published', 'draft', 'triage', 'all']),
                             ('f', ['triage', 'draft', 'published', 'closed', 'all'])]:

@@ -635,7 +635,7 @@ fn run(k string, api Repository, id string, input string) ! {
 				os.system_args(['git', 'show', input])
 				return
 			}
-			view_text(api.source_text(api.source(input)!, false)!)!
+			view_text(api.source_text(api.source(input)!, false)!, .markdown)!
 		}
 	}
 }
@@ -654,7 +654,7 @@ fn advisory_tui(api Repository, id string, first string) ! {
 	mut action := first
 	for {
 		match action {
-			'v' { view_text(api.advisory(id)!)! }
+			'v' { view_text(api.advisory(id)!, .advisory)! }
 			'e' { workflow_pause(api, false, 'edit', id)! }
 			'b' { if !similar_tui(api, id)! { return } }
 			'r' {
@@ -668,17 +668,6 @@ fn advisory_tui(api Repository, id string, first string) ! {
 		}
 		action = action_input('[v]iew advisory, [r] AI review, [b] similar bugs, [e]dit. Press Enter to return: ') or { return }
 		if action !in ['v', 'r', 'b', 'e'] { return }
-	}
-}
-
-fn view_text(text string) ! {
-	path := os.join_path(os.temp_dir(), 'gsadv-view-${os.getpid()}.md')
-	os.write_file(path, text)!
-	defer { os.rm(path) or {} }
-	if os.exists_in_system_path('r2') {
-		os.system_args(['r2', '-q', '-c', "cat -m ${path}~..", '--'])
-	} else {
-		sh('${os.getenv_opt('PAGER') or { 'less' }} "\$1"', path)
 	}
 }
 
@@ -1388,7 +1377,12 @@ fn tui(initial_api Repository, initial_label string) {
 					's' { similar_path(path) }
 					else { path }
 				}
-				view_text(os.read_file(shown) or { 'error: ${err}' }) or { status = 'error: ${err}' }
+				vf := match k {
+					'w' { ViewFormat.plain }
+					'd' { ViewFormat.advisory }
+					else { ViewFormat.markdown }
+				}
+				view_text(os.read_file(shown) or { 'error: ${err}' }, vf) or { status = 'error: ${err}' }
 			}
 			raw()
 			loader.request(api, label, .reports, true)
