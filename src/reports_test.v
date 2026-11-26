@@ -203,12 +203,12 @@ fn test_fix_agent_reaches_report_directory() ! {
 		os.write_file(os.join_path(finding, name), name)!
 	}
 	assert report_files(report) == 'patches/, poc.c'
-	assert agent_command(agents[0], true, finding) == 'claude -p --permission-mode acceptEdits --add-dir "\$3" --output-format stream-json --verbose'
-	assert agent_command(agents[1], true, finding) == 'codex exec --add-dir "\$3" -'
-	assert agent_command(agents[2], true, finding) == 'pmai --add-dir "\$3" --progress "\$(cat)"'
-	assert agent_command(agents[3], true, finding) == agents[3]
-	assert agent_command(agents[1], false, '') == agents[1]
-	assert agent_command(agents[2], false, '') == agents[2]
+	assert agent_command(agents[0], true, finding, '') == 'claude -p --permission-mode acceptEdits --add-dir "\$3" --output-format stream-json --verbose'
+	assert agent_command(agents[1], true, finding, '') == 'codex exec --add-dir "\$3" -'
+	assert agent_command(agents[2], true, finding, '') == 'pmai --add-dir "\$3" --progress "\$(cat)"'
+	assert agent_command(agents[3], true, finding, '') == agents[3]
+	assert agent_command(agents[1], false, '', '') == agents[1]
+	assert agent_command(agents[2], false, '', '') == agents[2]
 	os.chdir(checkout)!
 	stray := os.join_path(checkout, 'ADVISORY.md')
 	os.write_file(stray, 'summary: Overflow\n')!

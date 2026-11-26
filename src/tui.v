@@ -468,13 +468,20 @@ fn workflow_pause(api Repository, pause bool, args ...string) ! {
 		tui_workflow(api, ...cmd) or {
 			if err.code() == 130 { return err }
 			resume := resume_dir(err.msg())
-			match failure_prompt(cmd[0], err.msg(), resume != '') {
+			agent := setting('AI') or { agents[0] }
+			// Continuing replays the saved Claude conversation; other agents start over.
+			saved := if resume == '' { '' } else { claude_session(os.join_path(resume, 'claude.jsonl')) }
+			keep := saved != '' && agent == agents[0]
+			match failure_prompt(cmd[0], err.msg(), resume != '', keep) {
 				'r' { continue }
 				'u' { cmd = ['resume', resume]; continue }
+				'c' { cmd = ['continue', resume]; continue }
 				else {}
 			}
 			summary := err.msg().split_into_lines()[0] or { '' }
-			hint := if resume == '' { '' } else { ' | u: gsadv resume ${os.quoted_path(resume)}' }
+			mut hint := ''
+			if resume != '' { hint += ' | u: gsadv resume ${os.quoted_path(resume)}' }
+			if keep { hint += ' | c: gsadv continue ${os.quoted_path(resume)}' }
 			return error_with_code('${cmd[0]} failed: ${summary}${hint}', shown_failure)
 		}
 		if pause { pause_key(term.green('${cmd[0]} done.') + ' Press Enter to return: ') }
@@ -496,7 +503,7 @@ fn resume_dir(msg string) string {
 }
 
 // Highlight a failure below the action output; Enter or Esc returns.
-fn failure_prompt(name string, msg string, can_resume bool) string {
+fn failure_prompt(name string, msg string, can_resume bool, can_continue bool) string {
 	w, _ := terminal_size()
 	println('')
 	println(term.bold(term.red('✗ ${name} failed')))
@@ -511,11 +518,12 @@ fn failure_prompt(name string, msg string, can_resume bool) string {
 	}
 	mut hints := ['r retry']
 	if can_resume { hints << 'u resume without AI' }
+	if can_continue { hints << 'c continue with the AI' }
 	hints << 'Enter return'
 	println(key_hints(hints, line_width(w)))
 	for {
 		k := pause_key('> ')
-		if k == '' || k == 'r' || (k == 'u' && can_resume) { return k }
+		if k == '' || k == 'r' || (k == 'u' && can_resume) || (k == 'c' && can_continue) { return k }
 	}
 	return ''
 }

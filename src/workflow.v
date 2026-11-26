@@ -17,6 +17,7 @@ const prompt_similar = $embed_file('prompts/similar.txt').to_string().trim_right
 const prompt_fix = $embed_file('prompts/fix.txt').to_string().trim_right('\n')
 const prompt_pr_review = $embed_file('prompts/pr_review.txt').to_string().trim_right('\n')
 const prompt_quickfix = $embed_file('prompts/quickfix.txt').to_string().trim_right('\n')
+const prompt_continue = $embed_file('prompts/continue.txt').to_string().trim_right('\n')
 
 // Fill {{name}} placeholders in one pass, so inserted evidence is never expanded.
 fn render(template string, values map[string]string) string {
@@ -67,12 +68,29 @@ fn interrupt_edit(_ os.Signal) {
 
 // Files survive aborts, editor failures and API errors. Reports are always kept.
 fn resume_edit(dir string, run_ai bool) ! {
-	continue_edit(dir, run_ai) or {
+	continue_edit(dir, run_ai, '') or {
 		return error('${err}\nResume without AI: gsadv resume ${os.quoted_path(dir)}')
 	}
 }
 
-fn continue_edit(dir string, run_ai bool) ! {
+// Continue an interrupted AI run with the same Claude conversation, so the context
+// it gathered and the work it already did are kept instead of starting over.
+fn cmd_continue(id string) ! {
+	dir := os.real_path(id)
+	session := claude_session(os.join_path(dir, 'claude.jsonl'))
+	if session == '' {
+		return error('no saved Claude conversation in ${dir}; finish by hand with: gsadv resume ${os.quoted_path(dir)}')
+	}
+	if (setting('AI') or { agents[0] }) != agents[0] {
+		return error('continuing needs the default claude -p agent; GSADV_AI is ${setting('AI') or { '' }}')
+	}
+	os.write_file(os.join_path(dir, 'prompt.continue.txt'), prompt_continue)!
+	continue_edit(dir, true, session) or {
+		return error('${err}\nResume without AI: gsadv resume ${os.quoted_path(dir)}')
+	}
+}
+
+fn continue_edit(dir string, run_ai bool, resume string) ! {
 	session := json2.decode[EditSession](os.read_file(os.join_path(dir, 'session.json'))!)!
 	if session.kind !in ['new', 'review', 'edit', 'similar', 'source-review', 'pr-review', 'comment', 'fix', 'quickfix'] || session.repo == ''
 		|| (session.kind != 'new' && session.id == '') {
@@ -85,7 +103,7 @@ fn continue_edit(dir string, run_ai bool) ! {
 		os.signal_opt(.int, previous) or {}
 	}
 	if session.kind in ['source-review', 'pr-review', 'comment'] {
-		resume_comment(dir, session, run_ai)!
+		resume_comment(dir, session, run_ai, resume)!
 		return
 	}
 	fix := session.kind in ['fix', 'quickfix']
@@ -95,7 +113,7 @@ fn continue_edit(dir string, run_ai bool) ! {
 			// keeps its log; it stays behind if the run fails or is interrupted.
 			wip := if fix { start_wip(session.id, dir) } else { '' }
 			started := time.now().unix()
-			ask_ai(dir, false, fix, wip, if fix { os.dir(session.id) } else { '' }) or {
+			ask_ai(dir, false, fix, wip, if fix { os.dir(session.id) } else { '' }, resume) or {
 				return ai_error(dir, err.msg())
 			}
 			if fix { recover_advisory(session.id, started) }
@@ -129,7 +147,7 @@ fn continue_edit(dir string, run_ai bool) ! {
 			os.write_file(proposed, orig)!
 		} else {
 			if run_ai {
-				ask_ai(dir, true, false, '', '') or { return ai_error(dir, err.msg()) }
+				ask_ai(dir, true, false, '', '', resume) or { return ai_error(dir, err.msg()) }
 			}
 			notes, text := saved_ai_reply(dir) or {
 				return ai_error(dir, err.msg())
@@ -186,7 +204,7 @@ fn continue_edit(dir string, run_ai bool) ! {
 			println('Saved changes to ${session.id} on ${api.provider}.')
 		}
 		// A resumed directory may also contain files the user added; leave those alone.
-		for name in ['session.json', 'prompt.txt', 'reply.txt', 'claude.jsonl', 'notes.txt', 'original.md',
+		for name in ['session.json', 'prompt.txt', 'prompt.continue.txt', 'reply.txt', 'claude.jsonl', 'notes.txt', 'original.md',
 			'proposed.md', 'review.diff', 'result.md', 'edit.md'] {
 			os.rm(os.join_path(dir, name)) or {}
 		}
@@ -299,11 +317,13 @@ fn format_elapsed(seconds int) string {
 
 // The preset command with extra access to add_dir ("\$3" in the shell script);
 // custom agent commands are used as given.
-fn agent_command(ai string, edits bool, add_dir string) string {
+// resume continues the Claude conversation saved in a recovery directory.
+fn agent_command(ai string, edits bool, add_dir string, resume string) string {
 	extra := if add_dir == '' { '' } else { ' --add-dir "\$3"' }
 	if ai == agents[0] {
 		permission := if edits { ' --permission-mode acceptEdits' } else { '' }
-		return '${ai}${permission}${extra} --output-format stream-json --verbose'
+		fork := if resume == '' { '' } else { ' --resume "${resume}"' }
+		return '${ai}${fork}${permission}${extra} --output-format stream-json --verbose'
 	}
 	if ai == agents[1] { return 'codex exec${extra} -' }
 	if ai == agents[2] { return 'pmai${extra} --progress "\$(cat)"' }
@@ -315,25 +335,30 @@ fn agent_command(ai string, edits bool, add_dir string) string {
 // edits lets the default Claude preset change files; custom GSADV_AI commands set their own permissions.
 // add_dir gives the claude, codex and pmai presets access to another directory.
 // tee, when set, receives a copy of the agent's progress and output as it streams.
-fn ask_ai(dir string, advisory bool, edits bool, tee string, add_dir string) ! {
-	pf := os.join_path(dir, 'prompt.txt')
+// resume continues the conversation saved in the directory: the agent keeps the
+// context and the work of the interrupted run, and appends to the same transcript.
+fn ask_ai(dir string, advisory bool, edits bool, tee string, add_dir string, resume string) ! {
+	pf := os.join_path(dir, if resume == '' { 'prompt.txt' } else { 'prompt.continue.txt' })
 	of := os.join_path(dir, 'reply.txt')
 	ai := setting('AI') or { agents[0] }
 	claude := ai == agents[0]
-	command := agent_command(ai, edits, add_dir)
+	command := agent_command(ai, edits, add_dir, resume)
 	log := if claude { os.join_path(dir, 'claude.jsonl') } else { of }
-	os.write_file(of, '')!
-	if claude { os.write_file(log, '')! }
+	if resume == '' {
+		os.write_file(of, '')!
+		if claude { os.write_file(log, '')! }
+	}
 	mut input := os.open(log)!
 	defer { input.close() }
 	mut process := os.new_process('sh')
-	process.set_args(['-c', '{ ${command}\n} < "\$1" > "\$2"', 'sh', pf, log, add_dir])
+	process.set_args(['-c', '{ ${command}\n} < "\$1" >> "\$2"', 'sh', pf, log, add_dir])
 	mut stream := ClaudeStream{advisory: advisory, tee: tee}
 	stream.say('running ${ai} ...')
+	// A resumed transcript keeps its earlier events, so only the new ones are read.
+	mut offset := u64(os.file_size(log))
 	mut stopwatch := time.new_stopwatch()
 	process.run()
 	defer { process.close() }
-	mut offset := u64(0)
 	mut next_update := 10
 	for {
 		alive := process.is_alive()
@@ -409,6 +434,7 @@ struct ClaudeMessage {
 struct ClaudeEvent {
 	type string
 	subtype string
+	session_id string
 	parent_tool_use_id ?string
 	result string
 	is_error bool
@@ -425,6 +451,19 @@ struct ClaudeTurn {
 fn (event ClaudeEvent) content(line string) []ClaudeContent {
 	if event.type !in ['user', 'assistant'] { return [] }
 	return (json2.decode[ClaudeTurn](line) or { ClaudeTurn{} }).message.content
+}
+
+// The conversation id of the newest run in a transcript, for claude --resume.
+fn claude_session(log string) string {
+	text := os.read_file(log) or { return '' }
+	mut session := ''
+	for line in text.split_into_lines() {
+		event := json2.decode[ClaudeEvent](line) or { continue }
+		if event.type == 'system' && event.subtype == 'init' && event.session_id != '' {
+			session = event.session_id
+		}
+	}
+	return session
 }
 
 struct ClaudeStream {
@@ -1045,13 +1084,13 @@ fn cmd_comment(api Repository, input string, text string) ! {
 	resume_edit(start_edit(api, s.url, 'comment', text, '')!, false)!
 }
 
-fn resume_comment(dir string, session EditSession, run_ai bool) ! {
+fn resume_comment(dir string, session EditSession, run_ai bool, resume string) ! {
 	receipt := os.join_path(dir, 'posted.txt')
 	if os.exists(receipt) { println('Comment already posted: ${os.read_file(receipt)!}'); return }
 	path := os.join_path(dir, 'edit.md')
 	if !os.exists(path) {
 		if session.kind in ['source-review', 'pr-review'] && run_ai {
-			ask_ai(dir, false, false, '', '') or { return ai_error(dir, err.msg()) }
+			ask_ai(dir, false, false, '', '', resume) or { return ai_error(dir, err.msg()) }
 		}
 		name := if session.kind == 'comment' { 'original.md' } else { 'reply.txt' }
 		os.write_file(path, os.read_file(os.join_path(dir, name))!)!

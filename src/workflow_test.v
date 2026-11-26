@@ -200,6 +200,38 @@ fn test_claude_errors_retain_partial_reply() ! {
 	assert os.read_file(path)! == 'partial review'
 }
 
+fn test_claude_session_takes_the_newest_run() ! {
+	dir := start_edit(GitHub{repo: 'owner/repo'}, 'GHSA-test', 'review', '', '')!
+	defer { os.rmdir_all(dir) or {} }
+	log := os.join_path(dir, 'claude.jsonl')
+	assert claude_session(log) == ''
+	os.write_file(log, [
+		'{"type":"system","subtype":"init","session_id":"first"}',
+		'{"type":"result","is_error":true,"result":"boom"}',
+		'{"type":"system","subtype":"init","session_id":"second"}',
+		'{"type":"system","subtype":"permission_denied","message":"blocked"}',
+	].join('\n'))!
+	assert claude_session(log) == 'second'
+}
+
+fn test_agent_command_resumes_a_saved_conversation() {
+	resumed := agent_command(agents[0], true, '/tmp/report', 'abc123')
+	assert resumed.contains('--resume "abc123"')
+	assert resumed.contains('--permission-mode acceptEdits')
+	assert agent_command(agents[0], true, '/tmp/report', '').contains('claude -p --permission-mode')
+	assert !agent_command('codex exec -', false, '', 'abc123').contains('--resume')
+}
+
+fn test_continue_needs_a_saved_conversation() ! {
+	dir := start_edit(GitHub{repo: 'owner/repo'}, 'GHSA-test', 'review', '', '')!
+	defer { os.rmdir_all(dir) or {} }
+	if _ := cmd_continue(dir) {
+		assert false, 'continued without a saved conversation'
+	} else {
+		assert err.msg().contains('no saved Claude conversation')
+	}
+}
+
 fn test_claude_tool_progress_quotes_controls_and_bounds_unicode() ! {
 	command := 'printf "café"\n\tprintf "\\n"\r\x1b[2J'
 	block := json2.decode[ClaudeContent]('{"type":"tool_use","name":"Bash","input":{"command":${json2.encode(command)}}}')!

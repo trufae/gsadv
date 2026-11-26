@@ -144,11 +144,16 @@ background tasks emit later follow-up messages. Waiting messages do not replace 
 The full conversation remains in the saved transcript. Failures include a copyable
 `gsadv resume <directory>` command; resuming automatically restores a completed
 advisory from that transcript if `reply.txt` is missing or contains no advisory.
+`gsadv continue <directory>` reruns the AI of a failed action in the same saved
+Claude conversation (`src/prompts/continue.txt`), so the context it gathered and
+the work it already did are kept instead of starting over.
 
 When an action started from the TUI fails, the error is repeated in red below its
-output with the keys that apply: `r` retries the action, `u` resumes it without the
-AI when recovery files exist, and Enter returns. The error and its resume command
-stay in the status line after returning.
+output with the keys that apply: `r` retries the action from scratch, `u` resumes
+it without the AI when recovery files exist, `c` continues it in the same Claude
+conversation when one was saved (the default `claude -p` agent only), and Enter
+returns. The error and its resume and continue commands stay in the status line
+after returning.
 
 Commit and PR analysis accepts patches containing literal terminal escape bytes,
 such as terminal output test fixtures.

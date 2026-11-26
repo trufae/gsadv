@@ -1,0 +1,5 @@
+The previous run of the task in this conversation ended before it was finished.
+Continue where it stopped. Its work is still here: check the working tree, local
+commits and the files it wrote before changing anything, and do not redo what is
+already done. Finish the remaining steps and end with the reply the task asks
+for, in the exact format it requires.

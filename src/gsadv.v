@@ -37,6 +37,7 @@ const help = 'Usage: gsadv [-r namespace/repo|url] [--provider github|gitlab] [-
   fix <REPORT.md> [context] ask the AI to fix the reported bug and commit it locally
   quickfix <REPORT.md> [context] review and apply the suggested patch without builds or tests
   resume <directory>       continue saved work without running the AI again
+  continue <directory>     rerun the AI of a failed run in its saved conversation
   recover <log|directory> [opts] turn a saved claude.jsonl into Markdown (partial replies)
   cve <id>                 GitHub: request CVE; GitLab: show CVE request instructions
   approve <id>            alias for cve
@@ -119,6 +120,16 @@ fn main() {
 			exit(1)
 		}
 		resume_edit(os.real_path(id), false) or {
+			die(err)
+		}
+		return
+	}
+	if cmd == 'continue' {
+		if id == '' {
+			eprintln('usage: gsadv continue <recovery-directory>')
+			exit(1)
+		}
+		cmd_continue(os.real_path(id)) or {
 			die(err)
 		}
 		return
