@@ -206,6 +206,11 @@ fn (api GitLab) list_advisories(state string) ![][]string {
 	for item in items {
 		a := gitlab_issue_advisory(item)!
 		mut urls := [item.web_url]
+		mut references := text_matches(item.description, '[0-9a-f]{10,40}')
+		for part in item.description.split('OSS-SCAN - ')[1..] {
+			id := ant_id_prefix(part)
+			if id != '' && id !in references { references << id }
+		}
 		for token in item.description.fields() {
 			if at := token.index('https://') {
 				url := token[at..].trim_right(').,;]>"')
@@ -213,7 +218,7 @@ fn (api GitLab) list_advisories(state string) ![][]string {
 			}
 		}
 		rows << ['GL-${item.iid}', item.state, gitlab_cves(item), a.severity, item.title,
-			text_matches(item.description, '[0-9a-f]{10,40}').join(','), urls.join(','),
+			references.join(','), urls.join(','),
 			if item.confidential { 'confidential' } else { 'public' },
 			a.vulnerabilities.map(if it.patched_versions.trim_space() == '' { 'unknown' } else { it.patched_versions.trim_space() }).join('; '),
 			a.vulnerabilities.map(it.package.name + ': ' + if it.vulnerable_version_range == '' { 'unknown' } else { it.vulnerable_version_range }).join('; ')]

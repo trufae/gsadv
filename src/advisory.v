@@ -203,11 +203,11 @@ fn parse(text string) !Adv {
 	return a
 }
 
-// URL references link issues/PRs; hex prefixes link commits.
+// URL references link issues/PRs. Commit SHAs take precedence over finding IDs.
 // Build once per advisory snapshot, so list navigation never scans descriptions.
 struct AdvisoryLinks {
 mut:
-	commits map[string]int
+	references map[string]int
 	urls map[string]int
 }
 
@@ -215,8 +215,8 @@ fn advisory_links(advs [][]string) AdvisoryLinks {
 	mut links := AdvisoryLinks{}
 	for i, a in advs {
 		if a.len > 5 {
-			for prefix in a[5].split(',') {
-				if prefix != '' && prefix !in links.commits { links.commits[prefix] = i }
+			for reference in a[5].split(',') {
+				if reference != '' && reference !in links.references { links.references[reference] = i }
 			}
 		}
 		if a.len > 6 {
@@ -228,15 +228,28 @@ fn advisory_links(advs [][]string) AdvisoryLinks {
 	return links
 }
 
-fn (links AdvisoryLinks) find(input string) int {
+fn (links AdvisoryLinks) find(input string, findings ...string) int {
 	if input.starts_with('https://') { return links.urls[input.to_lower()] or { -1 } }
 	mut first := -1
 	for end in 1 .. input.len + 1 {
-		if i := links.commits[input[..end]] {
+		if i := links.references[input[..end]] {
 			if first < 0 || i < first { first = i }
 		}
 	}
-	return first
+	if first >= 0 { return first }
+	finding := findings[0] or { return -1 }
+	return links.references[finding] or { -1 }
+}
+
+fn adv_of_commit(advs [][]string, commit []string) int {
+	linked := adv_of(advs, commit[0] or { '' })
+	if linked >= 0 { return linked }
+	finding := commit[4] or { return -1 }
+	if finding == '' { return -1 }
+	for i, a in advs {
+		if a.len > 5 && finding in a[5].split(',') { return i }
+	}
+	return -1
 }
 
 fn adv_of(advs [][]string, input string) int {

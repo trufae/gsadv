@@ -41,7 +41,8 @@ const jq_source = '"# \\(.title)\n\nURL: \\(.html_url)\nAuthor: @\\(.user.login)
 
 const jq_advisories = '.[] | [
   .ghsa_id, .state, .cve_id // "-", .severity // "-", .summary,
-  ([.description // "" | scan("[0-9a-f]{10,40}")] | join(",")),
+  (([.description // "" | scan("[0-9a-f]{10,40}")] +
+    [.description // "" | scan("OSS-SCAN - (ANT-[0-9]{4}-[A-Z0-9]{8})([^A-Za-z0-9]|$)") | .[0]]) | join(",")),
   ([.description // "" | scan("https://github[.]com/[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+/(?:issues|pull)/[0-9]+")] | join(",")),
   "",
   ([.vulnerabilities[]? | (.patched_versions // "" | gsub("^\\\\s+|\\\\s+$"; "")) |

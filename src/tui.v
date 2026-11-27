@@ -243,7 +243,7 @@ Enter: preview the selected item below the list
 v: full-screen view; e: edit advisory or report; r: AI review
 n: new advisory: a AI draft, m manual draft, i import the ADVISORY.md of the finding
    referenced by the commit message (ANT-...) or of the selected report;
-   commits with one ready to import show 📝 ADVISORY.md until an advisory is linked
+   the commits tab shows 📝 for a local draft, followed by the linked advisory ID when available
 N: write a draft manually from a template in \$EDITOR
 M: edit and post a discussion comment on the selected issue/PR/MR
 In Issues, S implements locally, R investigates requirements and B finds related issues.
@@ -316,31 +316,38 @@ fn release_icon(state string) string {
 }
 
 fn crow(c []string, advs [][]string, w int) string {
-	i := if c.len > 0 { adv_of(advs, c[0]) } else { -1 }
+	i := adv_of_commit(advs, c)
 	return commit_row(c, if i >= 0 { advs[i] } else { []string{} }, w)
 }
+
+const commit_advisory_width = 22
 
 fn commit_row(c []string, a []string, w int) string {
 	if c.len < 3 {
 		return clip_line(c.join(' '), line_width(w))
 	}
-	// A finding's ADVISORY.md ready to import stands in until an advisory exists.
-	draft := a.len < 5 && c.len > 3 && c[3] != ''
-	mark := if a.len >= 5 {
-		color(a[1], '${a[0]:-20}')
+	draft := c.len > 3 && c[3] != ''
+	linked := a.len >= 5
+	label := if linked {
+		if draft { '📝 ${a[0]}' } else { a[0] }
 	} else if draft {
-		table_cell('📝 ADVISORY.md', 20)
+		'📝 ADVISORY.md'
 	} else {
-		term.dim('${'-':-20}')
+		'-'
 	}
-	severity := if a.len >= 5 && severity_icon(a[3]) != '⚪' {
+	severity := if linked && severity_icon(a[3]) != '⚪' {
 		a[3]
 	} else {
 		commit_severity(c[2])
 	}
 	line := if w < 40 { c[2] } else if w < 80 {
-		'${severity_icon(severity)} ${c[0]#[..10]} ${if draft { '📝 ' } else { '' }}${c[2]}'
-	} else { '${severity_icon(severity)} ${c[0]#[..10]} ${c[1]} ${mark} ${c[2]}' }
+		mark := if linked { color(a[1], label) + ' ' } else if draft { '📝 ' } else { '' }
+		'${severity_icon(severity)} ${c[0]#[..10]} ${mark}${c[2]}'
+	} else {
+		cell := table_cell(label, commit_advisory_width)
+		mark := if linked { color(a[1], cell) } else if draft { cell } else { term.dim(cell) }
+		'${severity_icon(severity)} ${c[0]#[..10]} ${c[1]} ${mark} ${c[2]}'
+	}
 	return clip_line(line, line_width(w))
 }
 
@@ -1254,7 +1261,7 @@ fn tui(label_override ?string) {
 		} else if w < 80 {
 			if view == 1 { '   COMMIT     SUBJECT' } else { 'NUMBER TYPE STATE COMMENTS TITLE' }
 		} else if view == 1 {
-			'   ${'COMMIT':-10} ${'DATE':-10} ${'ADVISORY':-20} SUBJECT'
+			'   ${'COMMIT':-10} ${'DATE':-10} ${table_cell('ADVISORY', commit_advisory_width)} SUBJECT'
 		} else {
 			'${'NUMBER':-8} ${'TYPE':-5} ${'STATE':-7} ${'COMMENTS':8} ${'ADVISORY':-20} TITLE'
 		}
@@ -1568,7 +1575,9 @@ fn tui(label_override ?string) {
 					entries := entries_by_view[next]
 					for c, index in visible[next] {
 						entry := entries[index]
-						if entry.len >= 3 && adv_of([advs[ai]], entry[0]) == 0 {
+						if entry.len < 3 { continue }
+						linked := if next == 1 { adv_of_commit([advs[ai]], entry) } else { adv_of([advs[ai]], entry[0]) }
+						if linked == 0 {
 							sel[next] = c
 							break
 						}

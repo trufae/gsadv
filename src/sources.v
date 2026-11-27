@@ -65,8 +65,8 @@ fn commit_grep() string {
 	return project_setting('grep')
 }
 
-// Matching commits in the cwd checkout: sha, date, subject and the ADVISORY.md of the
-// finding the message references (ANT-...), or ''.
+// Matching commits in the cwd checkout: sha, date, subject, local advisory draft path,
+// and the finding ID referenced in the message (ANT-...).
 fn commits() ![][]string {
 	return matching_commits(commit_grep())
 }
@@ -90,7 +90,7 @@ fn matching_commits(grep string) ![][]string {
 			indexed = true
 		}
 		path := os.join_path(findings[id] or { '' }, 'ADVISORY.md')
-		rows << [f[0], f[1], f[2], if id in findings && os.is_file(path) { path } else { '' }]
+		rows << [f[0], f[1], f[2], if id in findings && os.is_file(path) { path } else { '' }, id]
 	}
 	return rows
 }

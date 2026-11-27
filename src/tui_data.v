@@ -286,7 +286,12 @@ fn (mut list TuiList) rebuild(entries [][]string, advs [][]string, links Advisor
 	list.search = []string{len: entries.len}
 	list.marks = []Mark{len: entries.len}
 	for i, entry in entries {
-		linked := if view == 0 { i } else if view != 4 && entry.len > 0 { links.find(entry[0]) } else { -1 }
+		linked := match view {
+			0 { i }
+			1 { links.find(entry[0] or { '' }, entry[4] or { '' }) }
+			4 { -1 }
+			else { links.find(entry[0] or { '' }) }
+		}
 		list.links[i] = linked
 		list.search[i] = (entry.join(' ') + if view != 0 && linked >= 0 { ' ' + advs[linked][0] } else { '' }).to_lower()
 	}

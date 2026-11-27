@@ -115,9 +115,9 @@ fn test_wrapped_dialogs_and_input_tails() {
 }
 
 fn test_list_cache_refreshes_links_filters_and_row_width() {
-	entries := [['abcdef1234567890', '2026-11-09', 'Fix bounds check 界'],
+	entries := [['abcdef1234567890', '2026-11-09', 'Fix bounds check 界', '/draft/ADVISORY.md', 'ANT-2026-ABCDEFGH'],
 		['1234567890abcdef', '2026-11-08', 'Other fix']]
-	advs := [['GHSA-one', 'draft', '-', 'high', 'Bounds check', 'abcdef1234', '']]
+	advs := [['GHSA-one', 'draft', '-', 'high', 'Bounds check', 'ANT-2026-ABCDEFGH', '']]
 	mut list := TuiList{}
 	list.rebuild(entries, [], AdvisoryLinks{}, 1)
 	list.filter(entries, 'GHSA-ONE', 'all')
@@ -127,7 +127,7 @@ fn test_list_cache_refreshes_links_filters_and_row_width() {
 	list.rebuild(entries, advs, advisory_links(advs), 1)
 	list.filter(entries, 'GHSA-ONE', 'all')
 	assert list.visible == [0]
-	assert list.line(0, entries, advs, 1, 120, false).contains('GHSA-one')
+	assert list.line(0, entries, advs, 1, 120, false).contains('📝 GHSA-one')
 	assert list.line(0, entries, advs, 1, 30, false) == '  Fix bounds check 界'
 	assert term.strip_ansi(list.line(0, entries, advs, 1, 30, true)) == '  Fix bounds check 界'
 	list.filter(entries, '', 'all')

@@ -344,15 +344,18 @@ fn ant_id(text string) string {
 	mut i := 0
 	for {
 		i = text.index_after('ANT-', i) or { return '' }
-		id := text#[i..i + 17]
-		if id.len == 17 && id[4..8].bytes().all(it.is_digit()) && id[8] == `-`
-			&& id[9..].bytes().all(it.is_digit() || (it >= `A` && it <= `Z`))
-			&& (i + 17 == text.len || !text[i + 17].is_alnum()) {
-			return id
-		}
+		id := ant_id_prefix(text[i..])
+		if id != '' { return id }
 		i += 4
 	}
 	return ''
+}
+
+fn ant_id_prefix(text string) string {
+	if !text.starts_with('ANT-') || text.len < 17 || (text.len > 17 && text[17].is_alnum()) { return '' }
+	if !text[4..8].bytes().all(it.is_digit()) || text[8] != `-`
+		|| !text[9..17].bytes().all(it.is_digit() || (it >= `A` && it <= `Z`)) { return '' }
+	return text[..17]
 }
 
 // The directory of finding id below base, including the attic where fixed findings go.

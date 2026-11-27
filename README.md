@@ -124,9 +124,10 @@ included, and gives the agent its `ADVISORY.md` to trust as the starting point, 
 its `REPORT.md` as evidence when there is no draft.
 To skip the AI, press `n` then `i` on the fix commit (or on the report): gsadv opens
 that `ADVISORY.md` in `$EDITOR` and creates the draft when you save it. From the CLI,
-`gsadv import <commit|ADVISORY.md|REPORT.md>` does the same. In the commits tab and
-`gsadv log`, a fix commit without a linked advisory shows `📝 ADVISORY.md` when its
-finding has one ready to import.
+`gsadv import <commit|ADVISORY.md|REPORT.md>` does the same. The commits tab and
+`gsadv log` show the linked advisory ID, with a 📝 when a local draft exists.
+A local draft awaiting a linked advisory shows `📝 ADVISORY.md`. The link can come
+from the commit hash or a matching `OSS-SCAN - ANT-...` acknowledgement.
 `b`, or `gsadv similar <REPORT.md> [context]`, searches for similar bugs using the
 report as a template (the agent first confirms the report's bug pattern, since it
 may be a false positive) and saves the findings as `SIMILAR.md` next to the report;

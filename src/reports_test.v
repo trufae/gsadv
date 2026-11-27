@@ -203,9 +203,14 @@ fn test_commit_advisory() ! {
 	os.exec([...git, 'commit', '-q', '--allow-empty', '-m', 'Other fix ##crash'])
 	rows := commits()!
 	assert rows.len == 2 && rows[0][3] == '' && rows[1][3] == os.join_path(dir, 'ADVISORY.md')
+	assert rows[1][4] == 'ANT-2026-ABCDEFGH'
 	assert crow(rows[1], [][]string{}, 100).contains('📝 ADVISORY.md')
 	assert crow(rows[1], [][]string{}, 60).contains('📝 Fix it')
 	assert !crow(rows[0], [][]string{}, 100).contains('📝')
+	acknowledged := ['GHSA-abcd-efgh-ijkl', 'draft', '-', 'high', 'From finding', rows[1][4]]
+	assert term.strip_ansi(crow(rows[1], [acknowledged], 80)).contains('📝 GHSA-abcd-efgh-ijkl Fix it')
+	direct := ['GL-42', 'opened', '-', 'high', 'Direct link', rows[1][0]]
+	assert term.strip_ansi(crow(rows[1], [acknowledged, direct], 60)).contains('📝 GL-42 Fix it')
 }
 
 fn test_fix_agent_reaches_report_directory() ! {
